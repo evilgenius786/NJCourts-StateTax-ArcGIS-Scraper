@@ -59,7 +59,7 @@ notrequired = []
 nrfile = 'notrequired.txt'
 scrapedcsv = "NJ-Courts.csv"
 # outcsv = "Out.csv"
-debug = True
+debug = False
 headless = False
 images = True
 maximize = False
@@ -1015,9 +1015,9 @@ def downloadPdf(driver):
 
 
 if __name__ == "__main__":
-    # main()
-    initialize()
-    driver = getChromeDriver()
-    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, "4448", "22")
+    main()
+    # initialize()
+    # driver = getChromeDriver()
+    # getData(BeautifulSoup(driver.page_source, 'lxml'), driver, "4448", "22")
     # processAllJson()
     # print(getGoogleAddress("178 Boiling Springs Avenue,0212 - East Rutherford Boro, Bergen"))
