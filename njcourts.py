@@ -7,6 +7,7 @@ from time import sleep
 
 import PyPDF2
 import gspread
+import openpyxl
 import requests
 from bs4 import BeautifulSoup
 from google.oauth2 import service_account
@@ -23,8 +24,9 @@ import json
 
 t = 1
 timeout = 10
-fieldnames = ['Docket Number', 'Case Caption', 'Court', 'Venue', 'Case Initiation Date', 'Case Type', 'Case Status',
-              'Case Track', 'Judge', 'Disposition Date', 'Case Disposition', 'CaseActions']
+with open('fieldnames.txt') as ffile:
+    fieldnames = ffile.read().splitlines()
+
 # valid = {
 #     "Case Status": "Active",
 #     "Case Type": [
@@ -39,19 +41,30 @@ fieldnames = ['Docket Number', 'Case Caption', 'Court', 'Venue', 'Case Initiatio
 #     ],
 #     "Venue": ["Bergen", "Essex", "Hudson", "Middlesex", "Monmouth", "Morris", "Passaic", "Somerset", "Union"],
 # }
+lastrun = {"StartYear": 22, "EndYear": 22, "StartNumber": 1, "EndNumber": 100, "CurrentYear": 22, "CurrentNumber": 1}
+if os.path.isfile("LastRun.json"):
+    with open("LastRun.json", 'r') as infile:
+        lastrun = json.load(infile)
+    # print("LastRun.json found")
+    # print(json.dumps(lastrun, indent=4))
 download_dir = rf"{os.getcwd()}\downloads"
+tax_dir = "ALL TAX-F AGGREGATE"
+jdir = "ALL NJ-Court FORC DEFAULT"
+filter_dir = "All NJ-COURT Filtered Forc"
+other_dir = "Did NOT FILTER"
+changeddir = "changed"
+
+ss = 'ss'
 notrequired = []
 nrfile = 'notrequired.txt'
-jdir = "json"
 scrapedcsv = "NJ-Courts.csv"
 # outcsv = "Out.csv"
-changeddir = "changed"
-ss = 'ss'
-debug = False
+debug = True
 headless = False
 images = True
 maximize = False
 incognito = False
+encoding = 'utf8'
 drivers = []
 nj_url = 'https://portal.njcourts.gov/CIVILCaseJacketWeb/pages/civilCaseSearch.faces'
 disclaimer = "https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces"
@@ -67,8 +80,172 @@ sheet_headers = "https://docs.google.com/spreadsheets/d/1ZPr8vrUAnnJZY1wUEBmpGNn
 count = 1
 
 
+def processHeaders():
+    with open('headers.txt') as hfile:
+        headers = hfile.readlines()
+    data = {}
+    for line in headers:
+        line = line.strip().split("\t")
+        if len(line) == 2 and line[0] != "" and line[1] != "":
+            data[line[1]] = line[0]
+    print(json.dumps(data, indent=4))
+    with open('headers.json', 'w') as outfile:
+        json.dump(data, outfile, indent=4)
+
+
+def flatten_json(y):
+    out = {}
+
+    def flatten(x, name=''):
+        if type(x) is dict:
+            for a in x:
+                flatten(x[a], name + a + '_')
+        elif type(x) is list:
+            i = 0
+            for a in x:
+                flatten(a, name + str(i) + '_')
+                i += 1
+        else:
+            out[name[:-1]] = x
+
+    flatten(y)
+    return out
+
+
+def append(data):
+    with open(scrapedcsv, 'a', newline='', encoding=encoding) as sfile:
+        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(data)
+
+
+def processJson(f):
+    # with open('headers.json') as hfile:
+    #     headers = json.load(hfile)
+    file = f"./{jdir}/{f}"
+    print(f"Processing {file}")
+    with open(file) as jfile:
+        data = json.load(jfile)
+    properties = data['Tabs']['Properties'].copy()
+    if len(properties) > 0:
+        print(f"Found {len(properties)} properties in {file}")
+        del data['Tabs']['Properties']
+        for property_ in properties:
+            data.update(property_)
+            updated_data = flatten_json(data)
+            if "StateTax" in data and data["StateTax"]:
+                updated_data['StateTaxOwner'] = data['StateTax']['Owner'] if "Owner" in data[
+                    'StateTax'] else ""
+                state_tax_mail_addr = f"{data['StateTax']['Street']}, {data['StateTax']['City State']}"
+                updated_data['StateTaxMailingAddress'] = state_tax_mail_addr
+                updated_data['StateTaxMailingAddressStreet'] = data['StateTax']['Street']
+                updated_data['StateTaxMailingAddressCity'] = data['StateTax']['City State'].split(",")[
+                    0].strip()
+                updated_data['StateTaxMailingAddressState'] = data['StateTax']['City State'].split(",")[1].split()[0].strip()
+                updated_data['StateTaxMailingAddressZip'] = data['StateTax']['City State'].split(",")[1].split()[1].strip()
+                updated_data['StateTaxMailingNormalizedAddress'] = getGoogleAddress(state_tax_mail_addr)
+                dist = " ".join(data['StateTax']['District'].split()[1:])
+                state_tax_prop_addr = f"{data['StateTax']['Prop Loc']}, {dist}, {data['StateTax']['County']}"
+                updated_data['StateTaxPropertyAddress'] = state_tax_prop_addr
+                updated_data['StateTaxPropertyAddressStreet'] = data['StateTax']['Prop Loc']
+                updated_data['StateTaxPropertyAddressCity'] = dist
+                updated_data['StateTaxPropertyAddressState'] = "NJ"
+                updated_data['StateTaxPropertyAddressZip'] = ""
+                updated_data['StateTaxPropertyAddressCounty'] = data['StateTax']['County']
+                updated_data['StateTaxPropertyNormalizedAddress'] = getGoogleAddress(state_tax_prop_addr)
+            if "ArcGis" in data and data["ArcGis"]:
+                arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
+                updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
+                updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'][0].strip()
+                updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
+                updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
+                updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
+                arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
+                updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
+                updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
+                updated_data['ArcGisPropertyAddressCity'] = data['ArcGis']['MUN_NAME']
+                updated_data['ArcGisPropertyAddressState'] = "NJ"
+                updated_data['ArcGisPropertyAddressCounty'] = data['ArcGis']['COUNTY']
+                updated_data['ArcGisPropertyAddressZip'] = ""
+                updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
+            newfile = f"./CSV_json/CSV-{f.replace('/', '_').replace('.json', '')}-{data['Label'].replace('/', '_')}.json"
+            updated_data['Comments'] = updated_data.copy()
+            if debug:
+                print(updated_data.keys())
+            with open(newfile, 'w') as jfile:
+                json.dump(updated_data, jfile, indent=4)
+            append(updated_data)
+    else:
+        newfile = f"./CSV_json/CSV-{f}.json".replace("/", "_")
+        updated_data = flatten_json(data)
+        # updated_data = {}
+        # for key, value in new_data.items():
+        #     if key in headers:
+        #         updated_data[headers[key]] = value
+        updated_data['Comments'] = updated_data.copy()
+        with open(newfile, 'w') as jfile:
+            json.dump(updated_data, jfile, indent=4)
+        append(updated_data)
+    convert(scrapedcsv)
+    CategorizeJson(f)
+
+
+def getApn(url):
+    apn = url.split("&l02=")[1].replace("_________M", "").replace('____', '-0000-')
+    return f"{apn[2:4]} {apn[4:]}"
+
+
+def processAllJson():
+    for f in os.listdir(jdir):
+        if not f.endswith(".json"):
+            continue
+        processJson(f)
+
+
+def convert(filename):
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    with open(filename, encoding=encoding) as f:
+        reader = csv.reader(f, delimiter=',')
+        for row in reader:
+            ws.append(row)
+    wb.save(filename.replace("csv", "xlsx"))
+
+
+def CategorizeAllJson():
+    for f in os.listdir(jdir):
+        if not f.endswith(".json"):
+            continue
+        CategorizeJson(f)
+
+
+def CategorizeJson(file):
+    casetypes = ['Residential', 'Personam', 'Rem', 'Commercial', 'STRICT', 'Condominium', 'Time Share', 'FAIR']
+    with open(f"./{jdir}/{file}") as jfile:
+        data = json.load(jfile)
+    found = False
+    for casetype in casetypes:
+        if casetype.lower() in data['Case Type'].lower():
+            found = True
+            print(f"'{casetype}' found in ({data['Case Type']}) ({data['Docket Number']})")
+            if not os.path.isdir(f"./{filter_dir}/{casetype}"):
+                os.mkdir(f"./{filter_dir}/{casetype}")
+            with open(f"./{filter_dir}/{casetype}/{file}", 'w') as jfile:
+                json.dump(data, jfile, indent=4)
+            if casetype == 'Personam' or casetype == 'Rem':
+                if not os.path.isdir(f"./{filter_dir}/{tax_dir}"):
+                    os.mkdir(f"./{filter_dir}/{tax_dir}")
+                with open(f"./{filter_dir}/{tax_dir}/{file}", 'w') as jfile:
+                    json.dump(data, jfile, indent=4)
+    if not found:
+        print(f"Nothing found ({data['Case Type']}) ({data['Docket Number']})")
+        if not os.path.isdir(f"./{filter_dir}/{other_dir}"):
+            os.mkdir(f"./{filter_dir}/{other_dir}")
+        with open(f"./{filter_dir}/{other_dir}/{file}", 'w') as nfile:
+            json.dump(data, nfile, indent=4)
+
+
 def getNJactb(county, district, block, lot, district_number=None):
     try:
+        data = {"County": county, "District": district}
         print(f"Fetching records for {county}/{district}/{block}/{lot}")
         with open("njactb.json", "r") as jfile:
             disctricts = json.load(jfile)
@@ -82,7 +259,6 @@ def getNJactb(county, district, block, lot, district_number=None):
                 return None
         else:
             print(f"Got municipality code {district_number}!!")
-
         headers = {'User-Agent': 'Mozilla/5.0'}
         req_data = {
             'ms_user': 'monm',
@@ -108,7 +284,10 @@ def getNJactb(county, district, block, lot, district_number=None):
             print(f"Fetching data from {url}")
             content = requests.get(url).text
             soup = BeautifulSoup(content, 'lxml')
-            data = {"URL": url}
+            data['URL'] = url
+            data['APN'] = getApn(url)
+            # data['Qual'] = getApn(url).split()[0]
+            # input(data)
             table = soup.find_all('table')
             for key, val in zip(table[0].find_all("font", {"color": "BLACK"}),
                                 soup.find_all("font", {"color": "FIREBRICK"})):
@@ -137,7 +316,6 @@ def getNJactb(county, district, block, lot, district_number=None):
                         row[th] = td.text.replace("&nbsp", "").strip()
                 data["TAX-LIST-HISTORY"].append(row)
             # print(json.dumps(data, indent=4))
-            data['GoogleAddress'] = getGoogleAddress(data['Prop Loc'], data['City State'])
             with open(f"./StateTax/{county}-{district}-{block}-{lot}-NJATCB.json", "w") as jfile:
                 json.dump(data, jfile, indent=4)
             return data
@@ -156,7 +334,17 @@ def getOcean(district, block, lot):
         headers = {'user-agent': 'Mozilla/5.0'}
         with open("ocean.json") as f:
             districts = json.load(f)
-        district_num = districts[district.upper()]
+        found = False
+        district_num=""
+        for key, val in districts.items():
+            if key.upper() in district.upper() or district.upper() in key.upper():
+                district = key
+                district_num = val
+                found = True
+                break
+        if not found or district_num == "":
+            print(f"District {district} not found!")
+            return
         url = 'https://tax.co.ocean.nj.us/frmTaxBoardTaxListSearch.aspx'
         s = requests.Session()
         soup = BeautifulSoup(s.get(url, headers=headers).content, 'lxml')
@@ -174,11 +362,11 @@ def getOcean(district, block, lot):
         soup = BeautifulSoup(response.content, 'lxml')
         ahrefs = soup.find("table", {"id": "MainContent_m_DataTable"}).find_all("a", {"target": "_blank"})
         print(f"Found {len(ahrefs)} records")
-        href = ahrefs[0]["href"]
+        href = "https://tax.co.ocean.nj.us/"+ahrefs[0]["href"]
         print(f"Working on url ({block}/{lot}) {href}")
         content = requests.get(href).content
         soup = BeautifulSoup(content, 'lxml')
-        data = {"url": href}
+        data = {"URL": url, "County": "Ocean", "District": district}
         for table in soup.find("table", {"id": "MainContent_PulledContentTable"}).find_all("table"):
             if table.find_all("tr")[1].find("td", {"class": "PageTxtBlue"}):
                 name = table.find("tr").text.strip()
@@ -187,7 +375,7 @@ def getOcean(district, block, lot):
                     tds = tr.find_all("td")
                     for i in range(0, len(tds) - 1, 2):
                         if tds[i].text != "" and tds[i + 1].text != "":
-                            data[name][tds[i].text.strip()] = tds[i + 1].text.strip()
+                            data[name][tds[i].text.strip().replace(":","")] = tds[i + 1].text.strip()
             else:
                 name = table.find("tr").text.strip()
                 data[name] = []
@@ -195,10 +383,13 @@ def getOcean(district, block, lot):
                 for tr in table.find_all("tr")[2:]:
                     row = {}
                     for td, th in zip(tr.find_all("td"), ths):
-                        row[th] = td.text.strip()
+                        row[th.replace(":","")] = td.text.strip()
                     data[name].append(row)
         # print(json.dumps(data, indent=4))
-
+        city_state=data['Tax List Details - Current Year']['City/State'].split()
+        data['Street'] = data['Tax List Details - Current Year']['Mailing address']
+        data['City State'] = f"{' '.join(city_state[:-2])}, {' '.join(city_state[-2:])}"
+        data['Prop Loc'] = data['Tax List Details - Current Year']['Location']
         with open(f"StateTax/Ocean-{district}-{block}-{lot}.json", "w") as ofile:
             json.dump(data, ofile, indent=4)
         return data
@@ -210,6 +401,7 @@ def getOcean(district, block, lot):
 
 def getArcGis(county, district, block, lot):
     try:
+        attrib = {"County": county, "District": district}
         print(f"Fetching ARCGIS records for {county}/{district}/{block}/{lot}")
         with open("arcgis.json") as f:
             districts = json.load(f)
@@ -238,11 +430,16 @@ def getArcGis(county, district, block, lot):
             print(f"No results found for {county}-{district}-{block}/{lot}")
             # print(json.dumps(res, indent=4))
             return None
-        attrib = res['results'][0]['value']['features'][0]['attributes']
+        attrib.update(res['results'][0]['value']['features'][0]['attributes'])
+        # attrib['County'] = county
+        # attrib['District'] = district
         for a in [k for k in attrib.keys()]:
             if attrib[a] is None:
                 del attrib[a]
         # print(json.dumps(attrib, indent=4))
+        if "," not in attrib['CITY_STATE']:
+            city_State = attrib['CITY_STATE'].split()
+            attrib['CITY_STATE'] = " ".join(city_State[:-1]) + f", {city_State[-1]}"
         with open(f"ArcGis/{county}-{district}-{block}-{lot}-ARCGIS.json", 'w') as outfile:
             json.dump(attrib, outfile, indent=4)
         return attrib
@@ -273,8 +470,20 @@ def isValid(data):
 
 
 def processNjCourts():
-    num = range(int(input("Enter starting number: ")), int(input("Enter ending number: ")) + 1)
-    year = range(int(input("Enter starting year: ")), int(input("Enter ending year: ")) + 1)
+    if not os.path.isfile("LastRun.json"):
+        lastrun['StartNumber'] = int(input("Enter starting number: "))
+        lastrun['EndNumber'] = int(input("Enter ending number: "))
+        lastrun['StartYear'] = int(input("Enter starting year: "))
+        lastrun['EndYear'] = int(input("Enter ending year: "))
+        lastrun['CurrentYear'] = lastrun['StartYear']
+        lastrun['CurrentNumber'] = lastrun['StartNumber']
+        with open("LastRun.json", "w") as outfile:
+            json.dump(lastrun, outfile, indent=4)
+    else:
+        print("Resuming from last run")
+        print(json.dumps(lastrun, indent=4))
+    num = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
+    year = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
     driver = getChromeDriver()
     if "portal.njcourts.gov" not in driver.current_url:
         driver.get(nj_url)
@@ -285,6 +494,9 @@ def processNjCourts():
         checkDisclaimer(driver)
     for y in year:
         for n in num:
+            if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber']:
+                print(f"Skipping {y}-{n}")
+                continue
             if f"{y}-{n}" in notrequired:
                 pprint(f"Number {n} Year {y} not required!")
                 continue
@@ -311,34 +523,31 @@ def processNjCourts():
                 else:
                     tries = 0
                     req = True
-                    found = False
-                    for i in range(60):
-                        while "Case Caption" not in driver.page_source:
-                            if "Case Caption" in driver.page_source:
-                                break
-                            pprint("Waiting for result page...")
-                            time.sleep(1)
+                    while "Case Caption" not in driver.page_source:
+                        pprint("Waiting for result page...")
+                        try:
+                            driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                        except:
+                            traceback.print_exc()
+                        tries += 1
+                        if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
                             try:
-                                driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                                driver.refresh()
+                                req = fillInfo(driver, n, y)
                             except:
-                                traceback.print_exc()
-                            tries += 1
-                            if "captcha-solver-info" in driver.page_source or tries % 10 == 0:
-                                try:
-                                    driver.refresh()
-                                    req = fillInfo(driver, n, y)
-                                except:
-                                    pass
-                                tries = 1
-                            elif "You have been logged off as your user session expired" in driver.page_source:
-                                pprint("You have been logged off as your user session expired.")
-                                click(driver, '//a[text()=" here"]')
-                            sleep(1)
-                    if not found:
-                        driver.quit()
-                        driver = getChromeDriver()
-                    elif req:
+                                pass
+                            tries = 1
+                        elif "You have been logged off as your user session expired" in driver.page_source:
+                            pprint("You have been logged off as your user session expired.")
+                            click(driver, '//a[text()=" here"]')
+                        sleep(1)
+                    if req:
                         getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+                        # CategorizeJson()
+                    lastrun['CurrentYear'] = y
+                    lastrun['CurrentNumber'] = n
+                    with open("LastRun.json", "w") as outfile:
+                        json.dump(lastrun, outfile, indent=4)
             except:
                 traceback.print_exc()
                 pprint(f"Error {y} {n}")
@@ -370,7 +579,7 @@ def SearchBlockLot():
 def initialize():
     global notrequired
     logo()
-    for directory in [jdir, changeddir, 'StateTax', 'ArcGis',
+    for directory in [jdir, changeddir, 'StateTax', 'ArcGis', filter_dir, 'CSV_json',
                       # "notreq", ss
                       ]:
         if not os.path.isdir(directory):
@@ -379,7 +588,7 @@ def initialize():
         with open(nrfile, 'w') as nfile:
             nfile.write("")
     if not os.path.isfile(scrapedcsv):
-        with open(scrapedcsv, 'w', newline='', encoding='utf8') as sfile:
+        with open(scrapedcsv, 'w', newline='', encoding=encoding) as sfile:
             csv.DictWriter(sfile, fieldnames=fieldnames).writeheader()
     with open(nrfile) as nfile:
         notrequired = nfile.read().splitlines()
@@ -387,10 +596,12 @@ def initialize():
 
 def main():
     initialize()
-    option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot:")
+    if not os.path.isfile("LastRun.json"):
+        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
+    else:
+        option = "1"
     if option == "1":
         processNjCourts()
-        CategorizeJson()
         uploadCSV(sheet_headers, scrapedcsv)
     elif option == "2":
         SearchBlockLot()
@@ -451,7 +662,8 @@ def getData(soup, driver, n, y):
             # print("error", td)
             pass
     tabs_data = {}
-    downloadPdf(driver)
+    if not debug:
+        downloadPdf(driver)
     for li in soup.find('ul', {"role": "tablist"}).find_all("li", {"role": "tab"}):
         tab = li.text.split('\u00a0')[0].strip()
         tabs_data[tab] = []
@@ -477,20 +689,16 @@ def getData(soup, driver, n, y):
                     tab_data["StateTax"] = getNJactb(county, district, block, lot,
                                                      tab_data["Municipality"].split("-")[0].strip())
                 tab_data['ArcGis'] = getArcGis(county, district, block, lot)
-                tab_data['CourtNormalizedAddress'] = getGoogleAddress(tab_data["Street Address"], county, district)
+                tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
+                                                                              district)
                 tab_data[
-                    'CourtAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality']}, {tab_data['County']}"
+                    'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
                 tab_data["Label"] = tab_data["Label"].replace(":", "")
             tabs_data[tab].append(tab_data)
-    if tabs_data["Properties"]:
-        property0 = tabs_data["Properties"][0]
-        data['StateTaxOwner'] = property0['StateTax']['Owner']
-        data['CourtAddress'] = property0['CourtAddress']
-        data['CourtNormalizedAddress'] = property0['CourtNormalizedAddress']
-        state_tax_addr = f"{property0['StateTax']['Street']}, {property0['StateTax']['City State']}"
-        data['StateTaxAddress'] = state_tax_addr
-        data['StateTaxNormalizedAddress'] = getGoogleAddress(state_tax_addr)
+    # if tabs_data["Properties"]:
+    #     property0 = tabs_data["Properties"][0]
+
     data["Tabs"] = tabs_data
     data['CaseActions'] = []
     table = soup.find('table', {"id": "caseActionTbId2"})
@@ -521,7 +729,7 @@ def getData(soup, driver, n, y):
                         json.dump(data, jfile, indent=4)
                     with open(jf, 'w') as jfile:
                         json.dump(data, jfile, indent=4)
-                    createCsv(data)
+                    # createCsv(data)
             # try:
             #     driver.find_element(By.TAG_NAME, 'body').screenshot(f"./{ss}/{data['Docket Number']}.png")
             # except:
@@ -529,7 +737,8 @@ def getData(soup, driver, n, y):
             else:
                 with open(jf, 'w') as jfile:
                     json.dump(data, jfile, indent=4)
-                createCsv(data)
+                processJson(f"{y}-{n}.json")
+                # createCsv(data)
         else:
             pprint(f"Not required docket {data['Docket Number']}")
             with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
@@ -541,6 +750,8 @@ def getData(soup, driver, n, y):
         pprint(f"Not required {data['Docket Number']}")
         with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
             json.dump(data, jfile, indent=4)
+    if debug:
+        return data
     downloaded = False
     for i in range(10):
         time.sleep(1)
@@ -549,16 +760,13 @@ def getData(soup, driver, n, y):
             break
         print(f"Downloading CivilCaseJacket.pdf ({i})...")
     if downloaded:
-        print(f"CivilCaseJacket.pdf downloaded!, renaming to {y}-{n}.pdf")
-        os.rename(rf"{download_dir}/CivilCaseJacket.pdf", rf"{download_dir}/{y}-{n}.pdf")
+        print(f"CivilCaseJacket.pdf downloaded!, renaming to {y}-{n}-complaint.pdf")
+        if os.path.isfile(rf"{download_dir}/{y}-{n}-complaint.pdf"):
+            os.remove(rf"{download_dir}/{y}-{n}-complaint.pdf")
+        os.rename(rf"{download_dir}/CivilCaseJacket.pdf", rf"{download_dir}/{y}-{n}-complaint.pdf")
     else:
         print("Error downloading CivilCaseJacket.pdf")
     return data
-
-
-def createCsv(data):
-    with open(scrapedcsv, 'a', newline='', encoding='utf8') as sfile:
-        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(data)
 
 
 def uploadCSV(sht, csv_file):
@@ -594,29 +802,6 @@ def create():
     }
     drive_service.permissions().create(fileId=sheetId, body=permission1).execute()
     # print(sheetId)
-
-
-def CategorizeJson():
-    casetypes = ['Residential', 'Personam', 'Rem', 'Commercial', 'STRICT', 'Condominium', 'Time Share', 'FAIR']
-    for file in os.listdir(jdir):
-        if file.endswith(".json"):
-            with open(f"./{jdir}/{file}") as jfile:
-                data = json.load(jfile)
-            found = False
-            for casetype in casetypes:
-                if casetype.lower() in data['Case Type'].lower():
-                    found = True
-                    print(f"'{casetype}' found in ({data['Case Type']}) ({data['Docket Number']})")
-                    if not os.path.isdir(f"./{jdir}/{casetype}"):
-                        os.mkdir(f"./{jdir}/{casetype}")
-                    with open(f"./{jdir}/{casetype}/{file}", 'w') as jfile:
-                        json.dump(data, jfile, indent=4)
-            if not found:
-                print(f"Nothing found ({data['Case Type']}) ({data['Docket Number']})")
-                if not os.path.isdir(f"./{jdir}/Other"):
-                    os.mkdir(f"./{jdir}/Other")
-                with open(f"./json/Other/{file}", 'w') as nfile:
-                    json.dump(data, nfile, indent=4)
 
 
 def waitCaptcha(driver):
@@ -776,14 +961,17 @@ def check():
 
 def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}"
+    # if debug:
+    #     return addr
     url = f"https://www.google.com/search?q={addr}"
+    print(f"Getting Google Address {url}")
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
     soup = BeautifulSoup(requests.get(url, headers={'user-agent': ua}).text, 'lxml')
     try:
-        return soup.find("div", class_="vk_sh vk_bk").text
+        return f'{soup.find("div", class_="desktop-title-content").text}, {soup.find("span", class_="desktop-title-subcontent").text}'
     except:
         print(f"No address found {url}")
-        print(soup)
+        # print(soup)
         return ""
 
 
@@ -827,10 +1015,9 @@ def downloadPdf(driver):
 
 
 if __name__ == "__main__":
-    # downloadPdf(getChromeDriver())
-    # check()
-    # pdftoText("CivilCaseJacket.pdf")
-    main()
-    # for pdf_file in os.listdir("downloads"):
-    #     if pdf_file.endswith(".pdf"):
-    #         pdftoText(f"downloads/{pdf_file}")
+    # main()
+    initialize()
+    driver = getChromeDriver()
+    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, "4448", "22")
+    # processAllJson()
+    # print(getGoogleAddress("178 Boiling Springs Avenue,0212 - East Rutherford Boro, Bergen"))
