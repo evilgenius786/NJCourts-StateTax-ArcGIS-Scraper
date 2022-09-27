@@ -139,8 +139,10 @@ def processJson(f):
                 updated_data['StateTaxMailingAddressStreet'] = data['StateTax']['Street']
                 updated_data['StateTaxMailingAddressCity'] = data['StateTax']['City State'].split(",")[
                     0].strip()
-                updated_data['StateTaxMailingAddressState'] = data['StateTax']['City State'].split(",")[1].split()[0].strip()
-                updated_data['StateTaxMailingAddressZip'] = data['StateTax']['City State'].split(",")[1].split()[1].strip()
+                updated_data['StateTaxMailingAddressState'] = data['StateTax']['City State'].split(",")[1].split()[
+                    0].strip()
+                updated_data['StateTaxMailingAddressZip'] = data['StateTax']['City State'].split(",")[1].split()[
+                    1].strip()
                 updated_data['StateTaxMailingNormalizedAddress'] = getGoogleAddress(state_tax_mail_addr)
                 dist = " ".join(data['StateTax']['District'].split()[1:])
                 state_tax_prop_addr = f"{data['StateTax']['Prop Loc']}, {dist}, {data['StateTax']['County']}"
@@ -335,7 +337,7 @@ def getOcean(district, block, lot):
         with open("ocean.json") as f:
             districts = json.load(f)
         found = False
-        district_num=""
+        district_num = ""
         for key, val in districts.items():
             if key.upper() in district.upper() or district.upper() in key.upper():
                 district = key
@@ -362,7 +364,7 @@ def getOcean(district, block, lot):
         soup = BeautifulSoup(response.content, 'lxml')
         ahrefs = soup.find("table", {"id": "MainContent_m_DataTable"}).find_all("a", {"target": "_blank"})
         print(f"Found {len(ahrefs)} records")
-        href = "https://tax.co.ocean.nj.us/"+ahrefs[0]["href"]
+        href = "https://tax.co.ocean.nj.us/" + ahrefs[0]["href"]
         print(f"Working on url ({block}/{lot}) {href}")
         content = requests.get(href).content
         soup = BeautifulSoup(content, 'lxml')
@@ -375,7 +377,7 @@ def getOcean(district, block, lot):
                     tds = tr.find_all("td")
                     for i in range(0, len(tds) - 1, 2):
                         if tds[i].text != "" and tds[i + 1].text != "":
-                            data[name][tds[i].text.strip().replace(":","")] = tds[i + 1].text.strip()
+                            data[name][tds[i].text.strip().replace(":", "")] = tds[i + 1].text.strip()
             else:
                 name = table.find("tr").text.strip()
                 data[name] = []
@@ -383,10 +385,10 @@ def getOcean(district, block, lot):
                 for tr in table.find_all("tr")[2:]:
                     row = {}
                     for td, th in zip(tr.find_all("td"), ths):
-                        row[th.replace(":","")] = td.text.strip()
+                        row[th.replace(":", "")] = td.text.strip()
                     data[name].append(row)
         # print(json.dumps(data, indent=4))
-        city_state=data['Tax List Details - Current Year']['City/State'].split()
+        city_state = data['Tax List Details - Current Year']['City/State'].split()
         data['Street'] = data['Tax List Details - Current Year']['Mailing address']
         data['City State'] = f"{' '.join(city_state[:-2])}, {' '.join(city_state[-2:])}"
         data['Prop Loc'] = data['Tax List Details - Current Year']['Location']
@@ -947,18 +949,6 @@ def ValidityTest():
                 print(f"Not required {file}")
 
 
-def check():
-    initialize()
-    print("Testing mode...")
-    n = "22"
-    y = "22"
-    driver = getChromeDriver()
-    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
-    # print(json.dumps(data, indent=4))
-    # with open(f'{y}-{n}.json', 'w') as jfile:
-    #     json.dump(data, jfile, indent=4)
-
-
 def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}"
     # if debug:
@@ -1014,10 +1004,17 @@ def downloadPdf(driver):
             time.sleep(1)
 
 
+def check():
+    initialize()
+    print("Testing mode...")
+    n = "22"
+    y = "22"
+    driver = getChromeDriver()
+    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+
+
 if __name__ == "__main__":
-    main()
-    # initialize()
-    # driver = getChromeDriver()
-    # getData(BeautifulSoup(driver.page_source, 'lxml'), driver, "4448", "22")
-    # processAllJson()
-    # print(getGoogleAddress("178 Boiling Springs Avenue,0212 - East Rutherford Boro, Bergen"))
+    if debug:
+        check()
+    else:
+        main()
