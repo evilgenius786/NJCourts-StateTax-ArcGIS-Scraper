@@ -1,0 +1,64 @@
+Docket Number
+Case Caption
+Court
+Venue
+Case Initiation Date
+Case Type
+Case Status
+Disposition Date
+Case Disposition
+CourtNormalizedPropertyAddress
+CourtPropertyAddress
+StateTaxPropertyAddress
+StateTaxPropertyAddressStreet
+StateTaxPropertyAddressCity
+StateTaxPropertyAddressState
+StateTaxPropertyAddressZip
+StateTaxPropertyAddressCounty
+StateTaxPropertyNormalizedAddress
+ArcGisPropertyAddress
+ArcGisPropertyAddressStreet
+ArcGisPropertyAddressCity
+ArcGisPropertyAddressState
+ArcGisPropertyAddressCounty
+ArcGisPropertyAddressZip
+ArcGisPropertyNormalizedAddress
+StateTax_Owner
+StateTaxMailingAddress
+StateTaxMailingAddressStreet
+StateTaxMailingAddressCity
+StateTaxMailingAddressState
+StateTaxMailingAddressZip
+StateTaxMailingNormalizedAddress
+ArcGisMailingAddress
+ArcGisMailingAddressStreet
+ArcGisMailingAddressCity
+ArcGisMailingAddressState
+ArcGisMailingAddressZip
+ArcGisMailingNormalizedAddress
+Label
+Property Type
+StateTax_URL
+StateTax_APN
+StateTax_Block
+StateTax_Square Ft
+StateTax_Lot
+StateTax_Year Built
+StateTax_Land Desc
+StateTax_Bldg Desc
+StateTax_Updated
+StateTax_Zone
+ArcGis_PAMS_PIN
+ArcGis_PCL_MUN
+ArcGis_PCLBLOCK
+ArcGis_PCLLOT
+ArcGis_PROP_CLASS
+ArcGis_LAND_VAL
+ArcGis_IMPRVT_VAL
+ArcGis_NET_VALUE
+ArcGis_LAST_YR_TX
+ArcGis_DEED_DATE
+ArcGis_SALE_PRICE
+ArcGis_PCL_PBDATE
+ArcGis_PCL_GUID
+Comments
