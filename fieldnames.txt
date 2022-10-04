@@ -7,6 +7,18 @@ Case Type
 Case Status
 Disposition Date
 Case Disposition
+CourtBusinessName
+CourtNameType
+CourtFirstName
+CourtMiddleName
+CourtLastName
+CourtNameExtra
+StateTaxBusinessName
+StateTaxNameType
+StateTaxFirstName
+StateTaxMiddleName
+StateTaxLastName
+StateTaxNameExtra
 CourtNormalizedPropertyAddress
 CourtPropertyAddress
 StateTaxPropertyAddress

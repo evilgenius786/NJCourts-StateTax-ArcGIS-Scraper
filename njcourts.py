@@ -5,14 +5,15 @@ import time
 import traceback
 from time import sleep
 
-import PyPDF2
-import gspread
+# import gspread
+# from google.oauth2 import service_account
+# from googleapiclient.discovery import build
+# from oauth2client.service_account import ServiceAccountCredentials
+# import PyPDF2
+
 import openpyxl
 import requests
 from bs4 import BeautifulSoup
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from oauth2client.service_account import ServiceAccountCredentials
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -24,8 +25,6 @@ import json
 
 t = 1
 timeout = 10
-with open('fieldnames.txt') as ffile:
-    fieldnames = ffile.read().splitlines()
 
 # valid = {
 #     "Case Status": "Active",
@@ -78,6 +77,24 @@ sheet = "https://docs.google.com/spreadsheets/d/1tAgPaFU1J5ObQWIl6AnQ69MauIsIOEP
 sheet_headers = "https://docs.google.com/spreadsheets/d/1ZPr8vrUAnnJZY1wUEBmpGNnNFP8ieEf4qKXqfMNghyM"
 
 count = 1
+# if debug:
+#     fieldnames = """Docket Number
+# Case Caption
+# CourtBusinessName
+# CourtNameType
+# CourtFirstName
+# CourtMiddleName
+# CourtLastName
+# CourtNameExtra
+# StateTaxBusinessName
+# StateTaxNameType
+# StateTaxFirstName
+# StateTaxMiddleName
+# StateTaxLastName
+# StateTaxNameExtra""".splitlines()
+# else:
+with open('fieldnames.txt') as ffile:
+    fieldnames = ffile.read().splitlines()
 
 
 def processHeaders():
@@ -131,47 +148,101 @@ def processJson(f):
         for property_ in properties:
             data.update(property_)
             updated_data = flatten_json(data)
-            if "StateTax" in data and data["StateTax"]:
-                updated_data['StateTaxOwner'] = data['StateTax']['Owner'] if "Owner" in data[
-                    'StateTax'] else ""
-                state_tax_mail_addr = f"{data['StateTax']['Street']}, {data['StateTax']['City State']}"
-                updated_data['StateTaxMailingAddress'] = state_tax_mail_addr
-                updated_data['StateTaxMailingAddressStreet'] = data['StateTax']['Street']
-                updated_data['StateTaxMailingAddressCity'] = data['StateTax']['City State'].split(",")[
-                    0].strip()
-                updated_data['StateTaxMailingAddressState'] = data['StateTax']['City State'].split(",")[1].split()[
-                    0].strip()
-                updated_data['StateTaxMailingAddressZip'] = data['StateTax']['City State'].split(",")[1].split()[
-                    1].strip()
-                updated_data['StateTaxMailingNormalizedAddress'] = getGoogleAddress(state_tax_mail_addr)
-                dist = " ".join(data['StateTax']['District'].split()[1:])
-                state_tax_prop_addr = f"{data['StateTax']['Prop Loc']}, {dist}, {data['StateTax']['County']}"
-                updated_data['StateTaxPropertyAddress'] = state_tax_prop_addr
-                updated_data['StateTaxPropertyAddressStreet'] = data['StateTax']['Prop Loc']
-                updated_data['StateTaxPropertyAddressCity'] = dist
-                updated_data['StateTaxPropertyAddressState'] = "NJ"
-                updated_data['StateTaxPropertyAddressZip'] = ""
-                updated_data['StateTaxPropertyAddressCounty'] = data['StateTax']['County']
-                updated_data['StateTaxPropertyNormalizedAddress'] = getGoogleAddress(state_tax_prop_addr)
-            if "ArcGis" in data and data["ArcGis"]:
-                arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
-                updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
-                updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'][0].strip()
-                updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
-                updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
-                updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
-                arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
-                updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
-                updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
-                updated_data['ArcGisPropertyAddressCity'] = data['ArcGis']['MUN_NAME']
-                updated_data['ArcGisPropertyAddressState'] = "NJ"
-                updated_data['ArcGisPropertyAddressCounty'] = data['ArcGis']['COUNTY']
-                updated_data['ArcGisPropertyAddressZip'] = ""
-                updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
+            try:
+                if "Case Caption" in data and "Vs" in data["Case Caption"]:
+                    name = data["Case Caption"].split("Vs")[1].strip()
+                    updated_data['CourtBusinessName'] = name
+                    updated_data.update(getName(name, "Court"))
+                if "StateTax" in data and data["StateTax"]:
+
+                    tl = 'Tax List Details - Current Year'
+                    if "Owner" in data['StateTax']:
+                        updated_data['StateTaxBusinessName'] = data['StateTax']['Owner']
+                        updated_data.update(getName(updated_data['StateTaxBusinessName'], "StateTax"))
+                    elif tl in data['StateTax'] and "Owner" in data['StateTax'][tl]:
+                        updated_data['StateTaxBusinessName'] = data['StateTax'][tl]['Owner']
+                        updated_data.update(getName(updated_data['StateTaxBusinessName'], "StateTax"))
+                    state_tax_mail_addr = f"{data['StateTax']['Street']}, {data['StateTax']['City State']}"
+                    updated_data['StateTaxMailingAddress'] = state_tax_mail_addr
+                    try:
+                        updated_data['StateTaxMailingAddressStreet'] = data['StateTax']['Street']
+                        if "," not in data['StateTax']['City State']:
+                            data['StateTax']['City State'] = data['StateTax']['City State'].replace("     ", ", ")
+                        if "," not in data['StateTax']['City State']:
+                            data['StateTax']['City State'] = data['StateTax']['City State'].replace(" ", ", ", 1)
+                        data['StateTax']['City State'] = data['StateTax']['City State'].replace(", , ", ", ")
+                        updated_data['StateTaxMailingAddressCity'] = data['StateTax']['City State'].split(",")[
+                            0].strip()
+                        updated_data['StateTaxMailingAddressState'] = \
+                            data['StateTax']['City State'].split(",")[1].split()[
+                                0].strip()
+                        updated_data['StateTaxMailingAddressZip'] = \
+                            data['StateTax']['City State'].split(",")[1].split()[
+                                1].strip()
+                    except:
+                        print(data['StateTax'])
+                        traceback.print_exc()
+                    updated_data['StateTaxMailingNormalizedAddress'] = getGoogleAddress(state_tax_mail_addr)
+                    dist = data['StateTax']['District']
+                    dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
+                    if "County" not in data['StateTax']:
+                        data['StateTax']['County'] = ""
+                    state_tax_prop_addr = f"{data['StateTax']['Prop Loc']}, {dist}, {data['StateTax']['County']}"
+                    updated_data['StateTaxPropertyAddress'] = state_tax_prop_addr
+                    try:
+                        updated_data['StateTaxPropertyAddressStreet'] = data['StateTax']['Prop Loc']
+                        updated_data['StateTaxPropertyAddressCity'] = dist
+                        updated_data['StateTaxPropertyAddressState'] = "NJ"
+                        updated_data['StateTaxPropertyAddressZip'] = ""
+                        updated_data['StateTaxPropertyAddressCounty'] = data['StateTax']['County']
+                    except:
+                        traceback.print_exc()
+                    updated_data['StateTaxPropertyNormalizedAddress'] = getGoogleAddress(state_tax_prop_addr)
+                if "ArcGis" in data and data["ArcGis"]:
+                    if "CITY_STATE" not in data['ArcGis']:
+                        updated_data['ArcGisMailingAddress'] = "Unknown"
+                        continue
+                    if "UNKNOWN" in data['ArcGis']['CITY_STATE'] or "UNKNOWN" in data['ArcGis']['ST_ADDRESS']:
+                        updated_data['ArcGisMailingAddress'] = "Unknown"
+                        continue
+                    if "," not in data['ArcGis']['CITY_STATE']:
+                        data['ArcGis']['CITY_STATE'] = data['ArcGis']['CITY_STATE'].replace(" ", ", ")
+                    arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
+                    updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
+                    try:
+                        updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'][0].strip()
+
+                        updated_data['ArcGisMailingAddressCity'] = data['ArcGis']['CITY_STATE'].split(",")[0].strip()
+                        updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
+                        updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
+                    except:
+                        print(data['ArcGis'])
+                        traceback.print_exc()
+                    updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
+                    arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
+                    updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
+
+                    try:
+                        updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
+                        updated_data['ArcGisPropertyAddressCity'] = data['ArcGis']['MUN_NAME']
+                        for word in ['Twnshp', 'City', 'Boro', 'Twp']:
+                            updated_data['ArcGisPropertyAddressCity'] = updated_data[
+                                'ArcGisPropertyAddressCity'].replace(
+                                word, '')
+                        updated_data['ArcGisPropertyAddressState'] = "NJ"
+                        updated_data['ArcGisPropertyAddressCounty'] = data['ArcGis']['COUNTY']
+                        updated_data['ArcGisPropertyAddressZip'] = ""
+                    except:
+                        traceback.print_exc()
+                    updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
+            except:
+                print(f"Error processing {file} {property_}")
+                traceback.print_exc()
+                # input("Press any key...")
             newfile = f"./CSV_json/CSV-{f.replace('/', '_').replace('.json', '')}-{data['Label'].replace('/', '_')}.json"
             updated_data['Comments'] = updated_data.copy()
-            if debug:
-                print(updated_data.keys())
+            # if debug:
+            #     print(updated_data.keys())
             with open(newfile, 'w') as jfile:
                 json.dump(updated_data, jfile, indent=4)
             append(updated_data)
@@ -186,8 +257,9 @@ def processJson(f):
         with open(newfile, 'w') as jfile:
             json.dump(updated_data, jfile, indent=4)
         append(updated_data)
-    convert(scrapedcsv)
-    CategorizeJson(f)
+    if not debug:
+        convert(scrapedcsv)
+        CategorizeJson(f)
 
 
 def getApn(url):
@@ -569,7 +641,8 @@ def processBlockLot(data, row):
 
 def SearchBlockLot():
     if os.path.isfile("block-lot.csv"):
-        with open("block-lot.csv", 'r') as infile:
+        with open("block-lot.csv", 'r', encoding='utf-8-sig') as infile:
+            # print(infile.read())
             reader = csv.DictReader(infile)
             data = {}
             for row in reader:
@@ -598,13 +671,15 @@ def initialize():
 
 def main():
     initialize()
+    # CategorizeAllJson()
+    # processAllJson()
     if not os.path.isfile("LastRun.json"):
         option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
     else:
         option = "1"
     if option == "1":
         processNjCourts()
-        uploadCSV(sheet_headers, scrapedcsv)
+        # uploadCSV(sheet_headers, scrapedcsv)
     elif option == "2":
         SearchBlockLot()
     else:
@@ -752,8 +827,8 @@ def getData(soup, driver, n, y):
         pprint(f"Not required {data['Docket Number']}")
         with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
             json.dump(data, jfile, indent=4)
-    if debug:
-        return data
+    # if debug:
+    #     return data
     downloaded = False
     for i in range(10):
         time.sleep(1)
@@ -771,40 +846,42 @@ def getData(soup, driver, n, y):
     return data
 
 
-def uploadCSV(sht, csv_file):
-    # global count
-    # if count % 5 == 0:
-    pprint("Uploading CSV..")
-    credentials = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', SCOPES)
-    client = gspread.authorize(credentials)
-    spreadsheet = client.open_by_url(sht)
-    with open(csv_file, 'r') as file_obj:
-        content = file_obj.read()
-        client.import_csv(spreadsheet.id, data=content)
-    pprint(f"{csv_file} uploaded to {sht}")
-    # count += 1
-
-
-def create():
-    spreadsheet_details = {
-        'properties': {
-            'title': 'NJ-Court'
-        }
-    }
-    credentials = service_account.Credentials.from_service_account_file('client_secret.json', scopes=SCOPES)
-    spreadsheet_service = build('sheets', 'v4', credentials=credentials)
-    drive_service = build('drive', 'v3', credentials=credentials)
-    sht = spreadsheet_service.spreadsheets().create(body=spreadsheet_details, fields='spreadsheetId').execute()
-    sheetId = sht.get('spreadsheetId')
-    pprint('Spreadsheet ID: {0}'.format(sheetId))
-    permission1 = {
-        'type': 'user',
-        'role': 'writer',
-        'emailAddress': '786hassan777@gmail.com'
-    }
-    drive_service.permissions().create(fileId=sheetId, body=permission1).execute()
-    # print(sheetId)
-
+#
+#
+# def uploadCSV(sht, csv_file):
+#     # global count
+#     # if count % 5 == 0:
+#     pprint("Uploading CSV..")
+#     credentials = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', SCOPES)
+#     client = gspread.authorize(credentials)
+#     spreadsheet = client.open_by_url(sht)
+#     with open(csv_file, 'r') as file_obj:
+#         content = file_obj.read()
+#         client.import_csv(spreadsheet.id, data=content)
+#     pprint(f"{csv_file} uploaded to {sht}")
+#     # count += 1
+#
+#
+# def create():
+#     spreadsheet_details = {
+#         'properties': {
+#             'title': 'NJ-Court'
+#         }
+#     }
+#     credentials = service_account.Credentials.from_service_account_file('client_secret.json', scopes=SCOPES)
+#     spreadsheet_service = build('sheets', 'v4', credentials=credentials)
+#     drive_service = build('drive', 'v3', credentials=credentials)
+#     sht = spreadsheet_service.spreadsheets().create(body=spreadsheet_details, fields='spreadsheetId').execute()
+#     sheetId = sht.get('spreadsheetId')
+#     pprint('Spreadsheet ID: {0}'.format(sheetId))
+#     permission1 = {
+#         'type': 'user',
+#         'role': 'writer',
+#         'emailAddress': '786hassan777@gmail.com'
+#     }
+#     drive_service.permissions().create(fileId=sheetId, body=permission1).execute()
+#     # print(sheetId)
+#
 
 def waitCaptcha(driver):
     time.sleep(5)
@@ -900,7 +977,7 @@ def getChromeDriver(proxy=None):
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument("--disable-blink-features")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument('--user-data-dir=C:/selenium/ChromeProfile')
+        options.add_argument('--user-data-dir=C:/Selenium/ChromeProfile')
     if not images:
         # print("Turning off images to save bandwidth")
         options.add_argument("--blink-settings=imagesEnabled=false")
@@ -952,13 +1029,16 @@ def ValidityTest():
 def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}"
     # if debug:
-    #     return addr
+    print('Returning default address')
+    return addr
     url = f"https://www.google.com/search?q={addr}"
     print(f"Getting Google Address {url}")
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
     soup = BeautifulSoup(requests.get(url, headers={'user-agent': ua}).text, 'lxml')
     try:
-        return f'{soup.find("div", class_="desktop-title-content").text}, {soup.find("span", class_="desktop-title-subcontent").text}'
+        address = f'{soup.find("div", class_="desktop-title-content").text}, {soup.find("span", class_="desktop-title-subcontent").text}'
+        print(f"Found {address}")
+        return address
     except:
         print(f"No address found {url}")
         # print(soup)
@@ -975,14 +1055,14 @@ def TranslateCodeToMunicipality(code):
             return code
 
 
-def pdftoText(file):
-    with open(file, 'rb') as pdfFileObj:
-        pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
-        text = ""
-        for page in range(pdfReader.numPages):
-            pageObj = pdfReader.getPage(page)
-            text += (pageObj.extractText())
-        print(text)
+# def pdftoText(file):
+#     with open(file, 'rb') as pdfFileObj:
+#         pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
+#         text = ""
+#         for page in range(pdfReader.numPages):
+#             pageObj = pdfReader.getPage(page)
+#             text += (pageObj.extractText())
+#         print(text)
 
 
 def downloadPdf(driver):
@@ -1013,8 +1093,92 @@ def check():
     getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
 
 
+def getName(name: str, source: str):
+    data = {f"{source}BusinessName": name}
+    try:
+        # print(f"Name length ({len(name.split())})")
+        if len(name.strip().split()) == 1:
+            return data
+        name = name.replace("+", "&")
+        if "," in name and ", " not in name:
+            name = name.replace(",", ", ")
+        if "&" in name:
+            data[f'{source}NameExtra'] = name.split("&")[1].strip()
+            name = name.split("&")[0].strip()
+        if "/" in name:
+            data[f'{source}NameExtra'] = name.split("/")[1].strip()
+            name = name.split("/")[0].strip()
+        for extra in ['Jr', 'Heirs', 'EST OF']:
+            if extra in name:
+                data[f'{source}NameExtra'] = extra
+                name = name.replace(extra, "").strip()
+        if "Executri" in name:
+            data[f'{source}NameExtra'] = name.split(",")[1]
+            data[f'{source}FirstName'] = name.split(",")[0].split()[0]
+            data[f'{source}LastName'] = name.split(",")[0].split()[-1]
+            data[f'{source}NameType'] = "GOVT OWNED"
+        elif "Her Heirs" in name:
+            data[f'{source}NameExtra'] = "Her Heirs"
+            data[f'{source}FirstName'] = name.split()[0]
+            data[f'{source}LastName'] = name.split()[-1]
+        elif "His Heirs" in name:
+            data[f'{source}NameExtra'] = "His Heirs"
+            data[f'{source}FirstName'] = name.split()[-1]
+            data[f'{source}LastName'] = name.split()[0]
+        elif "vs state of" in name.lower():
+            data[f'{source}NameType'] = "GOVT OWNED"
+        elif "llc" in name.lower() or "inc" in name.lower():
+            data[f'{source}NameType'] = "Company"
+        elif "-" in name and len(name.split()) == 2:
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}LastName"] = name.split()[1]
+        elif len(name.split()) == 2:
+            data[f"{source}FirstName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[0]
+        elif len(name.split()) == 3 and len(name.strip().split()[1]) < 3:
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}MiddleName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[2]
+        elif len(name.split()) == 3 and len(name.split()[1]) > 2:
+            data[f"{source}FirstName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[0]
+            data[f"{source}MiddleName"] = name.split()[2]
+        elif len(name.split()) > 1 and name.split()[1][-1] == "," and len(name.split(",")[0].split()) == 2 and len(
+                name.split(",")[1].split()) == 2:
+            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
+            data[f"{source}LastName"] = name.split()[1][:-1].replace(",", "")
+            data[f"{source}MiddleName"] = name.split(",")[1].replace(",", "").strip()
+        elif name.split()[0][-1] == ",":
+            data[f'{source}FirstName'] = name.split()[0][:-1].replace(",", "")
+            data[f'{source}LastName'] = name.split(",")[1].split()[0].replace(",", "")
+            if len(name.split(",")[1].split()) > 2:
+                data[f'{source}MiddleName'] = name.split(",")[1].split()[1].replace(",", "")
+        print(json.dumps(data, indent=4))
+    except:
+        print(len(name.split()))
+        traceback.print_exc()
+        print(f"Error in name {name}")
+        # input("Press enter...")
+    return data
+
+
 if __name__ == "__main__":
-    if debug:
-        check()
-    else:
-        main()
+    # initialize()
+    # with open('names.txt') as f:
+    #     for n in f.read().splitlines():
+    #         getCourtName(n)
+    # rows=[]
+    # with open('names.txt') as f:
+    #     for n in f.read().splitlines():
+    #         if "Blk" not in n:
+    #             rows.append(getName(n, "Court"))
+    # with open('names.csv', 'w', newline='') as f:
+    #     writer = csv.DictWriter(f, fieldnames=["CourtBusinessName", "CourtNameType", "CourtFirstName", "CourtMiddleName", "CourtLastName", "CourtNameExtra"])
+    #     writer.writeheader()
+    #     writer.writerows(rows)
+    # processAllJson()
+    # input("Done")
+    # if debug:
+    #     check()
+    # else:
+    main()
