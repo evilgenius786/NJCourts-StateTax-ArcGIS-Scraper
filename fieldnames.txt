@@ -32,8 +32,8 @@ ArcGisPropertyAddress
 ArcGisPropertyAddressStreet
 ArcGisPropertyAddressCity
 ArcGisPropertyAddressState
-ArcGisPropertyAddressCounty
 ArcGisPropertyAddressZip
+ArcGisPropertyAddressCounty
 ArcGisPropertyNormalizedAddress
 StateTax_Owner
 StateTaxMailingAddress

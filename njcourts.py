@@ -210,7 +210,7 @@ def processJson(f):
                     arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
                     updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
                     try:
-                        updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'][0].strip()
+                        updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'].strip()
 
                         updated_data['ArcGisMailingAddressCity'] = data['ArcGis']['CITY_STATE'].split(",")[0].strip()
                         updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
@@ -227,8 +227,7 @@ def processJson(f):
                         updated_data['ArcGisPropertyAddressCity'] = data['ArcGis']['MUN_NAME']
                         for word in ['Twnshp', 'City', 'Boro', 'Twp']:
                             updated_data['ArcGisPropertyAddressCity'] = updated_data[
-                                'ArcGisPropertyAddressCity'].replace(
-                                word, '')
+                                'ArcGisPropertyAddressCity'].replace(word.upper(), '')
                         updated_data['ArcGisPropertyAddressState'] = "NJ"
                         updated_data['ArcGisPropertyAddressCounty'] = data['ArcGis']['COUNTY']
                         updated_data['ArcGisPropertyAddressZip'] = ""
@@ -1029,8 +1028,8 @@ def ValidityTest():
 def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}"
     # if debug:
-    print('Returning default address')
-    return addr
+    # print('Returning default address')
+    # return addr
     url = f"https://www.google.com/search?q={addr}"
     print(f"Getting Google Address {url}")
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
@@ -1100,6 +1099,8 @@ def getName(name: str, source: str):
         if len(name.strip().split()) == 1:
             return data
         name = name.replace("+", "&")
+        if '.' in name:
+            name = name.replace('.', '')
         if "," in name and ", " not in name:
             name = name.replace(",", ", ")
         if "&" in name:
@@ -1108,7 +1109,7 @@ def getName(name: str, source: str):
         if "/" in name:
             data[f'{source}NameExtra'] = name.split("/")[1].strip()
             name = name.split("/")[0].strip()
-        for extra in ['Jr', 'Heirs', 'EST OF']:
+        for extra in ['Jr', 'EST OF']:
             if extra in name:
                 data[f'{source}NameExtra'] = extra
                 name = name.replace(extra, "").strip()
@@ -1119,12 +1120,23 @@ def getName(name: str, source: str):
             data[f'{source}NameType'] = "GOVT OWNED"
         elif "Her Heirs" in name:
             data[f'{source}NameExtra'] = "Her Heirs"
-            data[f'{source}FirstName'] = name.split()[0]
-            data[f'{source}LastName'] = name.split()[-1]
+            name = name.replace("Her Heirs", "").strip()
+            if "," in name:
+                data[f'{source}FirstName'] = name.split(",")[-1]
+                data[f'{source}LastName'] = name.split(",")[0]
+
+            else:
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
+                data[f'{source}LastName'] = name.split()[0]
         elif "His Heirs" in name:
-            data[f'{source}NameExtra'] = "His Heirs"
-            data[f'{source}FirstName'] = name.split()[-1]
-            data[f'{source}LastName'] = name.split()[0]
+            data[f'{source}NameExtra'] = "Jr"
+            name = name.replace("His Heirs", "").strip()
+            if "," in name:
+                data[f'{source}FirstName'] = name.split(",")[-1]
+                data[f'{source}LastName'] = name.split(",")[0]
+            else:
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
+                data[f'{source}LastName'] = name.split()[0]
         elif "vs state of" in name.lower():
             data[f'{source}NameType'] = "GOVT OWNED"
         elif "llc" in name.lower() or "inc" in name.lower():
@@ -1133,8 +1145,12 @@ def getName(name: str, source: str):
             data[f"{source}FirstName"] = name.split()[0]
             data[f"{source}LastName"] = name.split()[1]
         elif len(name.split()) == 2:
-            data[f"{source}FirstName"] = name.split()[1]
-            data[f"{source}LastName"] = name.split()[0]
+            if "," in name:
+                data[f"{source}FirstName"] = name.split(",")[-1]
+                data[f"{source}LastName"] = name.split(",")[0]
+            else:
+                data[f"{source}FirstName"] = name.split()[0]
+                data[f"{source}LastName"] = name.split()[-1]
         elif len(name.split()) == 3 and len(name.strip().split()[1]) < 3:
             data[f"{source}FirstName"] = name.split()[0]
             data[f"{source}MiddleName"] = name.split()[1]
@@ -1164,6 +1180,9 @@ def getName(name: str, source: str):
 
 if __name__ == "__main__":
     # initialize()
+    # getName('Babey, Jr. James M', 'Court')
+    # processAllJson()
+    main()
     # with open('names.txt') as f:
     #     for n in f.read().splitlines():
     #         getCourtName(n)
@@ -1176,9 +1195,9 @@ if __name__ == "__main__":
     #     writer = csv.DictWriter(f, fieldnames=["CourtBusinessName", "CourtNameType", "CourtFirstName", "CourtMiddleName", "CourtLastName", "CourtNameExtra"])
     #     writer.writeheader()
     #     writer.writerows(rows)
-    # processAllJson()
+
     # input("Done")
     # if debug:
     #     check()
     # else:
-    main()
+    #
