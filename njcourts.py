@@ -10,8 +10,9 @@ from time import sleep
 # from googleapiclient.discovery import build
 # from oauth2client.service_account import ServiceAccountCredentials
 # import PyPDF2
+# import openpyxl
 
-import openpyxl
+import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -77,22 +78,16 @@ sheet = "https://docs.google.com/spreadsheets/d/1tAgPaFU1J5ObQWIl6AnQ69MauIsIOEP
 sheet_headers = "https://docs.google.com/spreadsheets/d/1ZPr8vrUAnnJZY1wUEBmpGNnNFP8ieEf4qKXqfMNghyM"
 
 count = 1
-# if debug:
-#     fieldnames = """Docket Number
-# Case Caption
-# CourtBusinessName
-# CourtNameType
-# CourtFirstName
-# CourtMiddleName
-# CourtLastName
-# CourtNameExtra
-# StateTaxBusinessName
-# StateTaxNameType
-# StateTaxFirstName
-# StateTaxMiddleName
-# StateTaxLastName
-# StateTaxNameExtra""".splitlines()
-# else:
+
+tdh = "https://www.taxdatahub.com"
+cpash = "County%20Property%20Assessment%20Search%20Hub"
+tax_data_url = {
+    "Burlington": "623af8995103551060110abc",
+    "Camden": "60d088c3d3501df3b0e45ddb",
+    "Essex": "6229fbf0ce4aef911f9de7bc",
+    "Middlesex": "623085dd284c51d4d32ff9fe",
+}
+
 with open('fieldnames.txt') as ffile:
     fieldnames = ffile.read().splitlines()
 
@@ -149,6 +144,19 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
+                if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
+                    updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
+                                                                                      "%m/%d/%Y").strftime("%Y-%m-%d")
+                if "Disposition Date" in data and data["Disposition Date"] != "":
+                    updated_data["Disposition Date"] = datetime.datetime.strptime(data["Disposition Date"],
+                                                                                  "%m/%d/%Y").strftime("%Y-%m-%d")
+                if "StateTax_Updated" in updated_data and updated_data["StateTax_Updated"] != "":
+                    updated_data["StateTax_Updated"] = datetime.datetime.strptime(
+                        updated_data["StateTax_Updated"].strip(),
+                        "%m/%d/%y").strftime("%Y-%m-%d")
+                if "ArcGis_DEED_DATE" in updated_data and updated_data["ArcGis_DEED_DATE"] != "":
+                    updated_data["ArcGis_DEED_DATE"] = datetime.datetime.strptime(updated_data["ArcGis_DEED_DATE"],
+                                                                                  "%y%m%d").strftime("%Y-%m-%d")
                 if "Case Caption" in data and "Vs" in data["Case Caption"]:
                     name = data["Case Caption"].split("Vs")[1].strip()
                     updated_data['CourtBusinessName'] = name
@@ -271,16 +279,18 @@ def processAllJson():
         if not f.endswith(".json"):
             continue
         processJson(f)
+    convert(scrapedcsv)
 
 
 def convert(filename):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    with open(filename, encoding=encoding) as f:
-        reader = csv.reader(f, delimiter=',')
-        for row in reader:
-            ws.append(row)
-    wb.save(filename.replace("csv", "xlsx"))
+    # wb = openpyxl.Workbook()
+    # ws = wb.active
+    # with open(filename, encoding=encoding) as f:
+    #     reader = csv.reader(f, delimiter=',')
+    #     for row in reader:
+    #         ws.append(row)
+    # wb.save(filename.replace("csv", "xlsx"))
+    pd.read_csv(filename, encoding=encoding).to_excel(filename.replace("csv", "xlsx"), index=False)
 
 
 def CategorizeAllJson():
@@ -316,20 +326,34 @@ def CategorizeJson(file):
             json.dump(data, nfile, indent=4)
 
 
+def getTaxDataHub(county, district, block, lot):
+    print(f"Fetching TaxDataHub records for {county}/{district}/{block}/{lot}")
+    district_number = getDistrictCode(county, district)
+    if district_number is None:
+        print(f"District code not found for {county}/{district}")
+        return
+    url = f"{tdh}/{tax_data_url[county]}/{county}-{cpash}/details?id={district_number}_{block}_{lot}"
+    print(url)
+    data = {"County": county, "District": district, "URL": url}
+    soup = BeautifulSoup(requests.get(url).text, "html.parser")
+    script = soup.find_all('script')[-3].text
+    for line in script.splitlines()[2:-5]:
+        if "DetailField" in line:
+            continue
+        data[line.strip().split()[0].split(".")[1]] = json.loads(line.split("=", 1)[1].strip()[:-1])
+    # print(json.dumps(data, indent=4))
+    return data
+
+
 def getNJactb(county, district, block, lot, district_number=None):
     try:
         data = {"County": county, "District": district}
         print(f"Fetching records for {county}/{district}/{block}/{lot}")
-        with open("njactb.json", "r") as jfile:
-            disctricts = json.load(jfile)
         if district_number is None:
-            try:
-                if district.upper() not in disctricts[county.upper()].keys():
-                    district = district.split()[0]
-                district_number = disctricts[county.upper()][district.upper()]
-            except:
-                print(f"Invalid District {county}/{district}/{block}/{lot}")
-                return None
+            district_number = getDistrictCode(county, district)
+            if district_number is None:
+                print(f"District code not found for {county}/{district}")
+                return
         else:
             print(f"Got municipality code {district_number}!!")
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -388,7 +412,7 @@ def getNJactb(county, district, block, lot, district_number=None):
                     elif td.text.strip() != "&nbsp":
                         row[th] = td.text.replace("&nbsp", "").strip()
                 data["TAX-LIST-HISTORY"].append(row)
-            # print(json.dumps(data, indent=4))
+            print(json.dumps(data, indent=4))
             with open(f"./StateTax/{county}-{district}-{block}-{lot}-NJATCB.json", "w") as jfile:
                 json.dump(data, jfile, indent=4)
             return data
@@ -405,19 +429,9 @@ def getOcean(district, block, lot):
     try:
         print(f"Fetching records for Ocean/{district}/{block}/{lot}")
         headers = {'user-agent': 'Mozilla/5.0'}
-        with open("ocean.json") as f:
-            districts = json.load(f)
-        found = False
-        district_num = ""
-        for key, val in districts.items():
-            if key.upper() in district.upper() or district.upper() in key.upper():
-                district = key
-                district_num = val
-                found = True
-                break
-        if not found or district_num == "":
-            print(f"District {district} not found!")
-            return
+        district_num = getDistrictCode("Ocean", district)
+        if district_num is None:
+            return None
         url = 'https://tax.co.ocean.nj.us/frmTaxBoardTaxListSearch.aspx'
         s = requests.Session()
         soup = BeautifulSoup(s.get(url, headers=headers).content, 'lxml')
@@ -426,7 +440,7 @@ def getOcean(district, block, lot):
             '__VIEWSTATEGENERATOR': soup.find("input", {"id": "__VIEWSTATEGENERATOR"})["value"],
             '__EVENTVALIDATION': soup.find("input", {"id": "__EVENTVALIDATION"})["value"],
             'ctl00$LogoFreeholders$FreeholderHistory$FreeholderAccordion_AccordionExtender_ClientState': '-1',
-            'ctl00$MainContent$cmbDistrict': district_num,
+            'ctl00$MainContent$cmbDistrict': district_num[2:],
             'ctl00$MainContent$txtBlock': block,
             'ctl00$MainContent$txtLot': lot,
             'ctl00$MainContent$btnSearch': 'Search'
@@ -510,7 +524,7 @@ def getArcGis(county, district, block, lot):
             if attrib[a] is None:
                 del attrib[a]
         # print(json.dumps(attrib, indent=4))
-        if "," not in attrib['CITY_STATE']:
+        if "CITY_STATE" in attrib and "," not in attrib['CITY_STATE']:
             city_State = attrib['CITY_STATE'].split()
             attrib['CITY_STATE'] = " ".join(city_State[:-1]) + f", {city_State[-1]}"
         with open(f"ArcGis/{county}-{district}-{block}-{lot}-ARCGIS.json", 'w') as outfile:
@@ -629,8 +643,8 @@ def processNjCourts():
 
 def processBlockLot(data, row):
     print(f"Working on {row}")
-    if row['county'] in ["Burlington", "Camden"]:
-        data["StateTax"] = {}
+    if row['county'] in tax_data_url.keys():
+        data["TaxDataHub"] = getTaxDataHub(row['county'], row['district'], row['block'], row['lot'])
     elif row['county'] == "Ocean":
         data["StateTax"] = getOcean(row['district'], row['block'], row['lot'])
     else:
@@ -757,8 +771,8 @@ def getData(soup, driver, n, y):
                 label = tab_data["Label"].split()
                 block = label[1]
                 lot = label[-1]
-                if county in ["Burlington", "Camden"]:
-                    tab_data["StateTax"] = {}
+                if county in tax_data_url.keys():
+                    tab_data["TaxDataHub"] = getTaxDataHub(county, district, block, lot)
                 elif county == "Ocean":
                     tab_data["StateTax"] = getOcean(district, block, lot)
                 else:
@@ -826,8 +840,8 @@ def getData(soup, driver, n, y):
         pprint(f"Not required {data['Docket Number']}")
         with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
             json.dump(data, jfile, indent=4)
-    # if debug:
-    #     return data
+    if debug:
+        return data
     downloaded = False
     for i in range(10):
         time.sleep(1)
@@ -1027,9 +1041,9 @@ def ValidityTest():
 
 def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}"
-    # if debug:
-    # print('Returning default address')
-    # return addr
+    if debug:
+        print('Returning default address')
+        return addr
     url = f"https://www.google.com/search?q={addr}"
     print(f"Getting Google Address {url}")
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
@@ -1114,51 +1128,56 @@ def getName(name: str, source: str):
                 data[f'{source}NameExtra'] = extra
                 name = name.replace(extra, "").strip()
         if "Executri" in name:
-            data[f'{source}NameExtra'] = name.split(",")[1]
-            data[f'{source}FirstName'] = name.split(",")[0].split()[0]
-            data[f'{source}LastName'] = name.split(",")[0].split()[-1]
+            data[f'{source}NameExtra'] = name.split(",")[1].replace(",", "")
+            data[f'{source}FirstName'] = name.split(",")[0].split()[0].replace(",", "")
+            data[f'{source}LastName'] = name.split(",")[0].split()[-1].replace(",", "")
             data[f'{source}NameType'] = "GOVT OWNED"
         elif "Her Heirs" in name:
             data[f'{source}NameExtra'] = "Her Heirs"
             name = name.replace("Her Heirs", "").strip()
             if "," in name:
-                data[f'{source}FirstName'] = name.split(",")[-1]
-                data[f'{source}LastName'] = name.split(",")[0]
+                data[f'{source}FirstName'] = name.split(",")[-1].replace(",", "")
+                data[f'{source}LastName'] = name.split(",")[0].replace(",", "")
 
             else:
-                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
-                data[f'{source}LastName'] = name.split()[0]
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr".replace(",", "")
+                data[f'{source}LastName'] = name.split()[0].replace(",", "")
         elif "His Heirs" in name:
             data[f'{source}NameExtra'] = "Jr"
             name = name.replace("His Heirs", "").strip()
             if "," in name:
-                data[f'{source}FirstName'] = name.split(",")[-1]
-                data[f'{source}LastName'] = name.split(",")[0]
+                data[f'{source}FirstName'] = name.split(",")[-1].replace(",", "")
+                data[f'{source}LastName'] = name.split(",")[0].replace(",", "")
             else:
-                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
-                data[f'{source}LastName'] = name.split()[0]
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr".replace(",", "")
+                data[f'{source}LastName'] = name.split()[0].replace(",", "")
         elif "vs state of" in name.lower():
             data[f'{source}NameType'] = "GOVT OWNED"
         elif "llc" in name.lower() or "inc" in name.lower():
             data[f'{source}NameType'] = "Company"
         elif "-" in name and len(name.split()) == 2:
-            data[f"{source}FirstName"] = name.split()[0]
-            data[f"{source}LastName"] = name.split()[1]
+            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
+            data[f"{source}LastName"] = name.split()[1].replace(",", "")
         elif len(name.split()) == 2:
             if "," in name:
-                data[f"{source}FirstName"] = name.split(",")[-1]
-                data[f"{source}LastName"] = name.split(",")[0]
+                data[f"{source}FirstName"] = name.split(",")[-1].replace(",", "")
+                data[f"{source}LastName"] = name.split(",")[0].replace(",", "")
             else:
-                data[f"{source}FirstName"] = name.split()[0]
-                data[f"{source}LastName"] = name.split()[-1]
+                data[f"{source}FirstName"] = name.split()[0].replace(",", "")
+                data[f"{source}LastName"] = name.split()[-1].replace(",", "")
         elif len(name.split()) == 3 and len(name.strip().split()[1]) < 3:
-            data[f"{source}FirstName"] = name.split()[0]
-            data[f"{source}MiddleName"] = name.split()[1]
-            data[f"{source}LastName"] = name.split()[2]
+            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
+            data[f"{source}MiddleName"] = name.split()[1].replace(",", "")
+            data[f"{source}LastName"] = name.split()[2].replace(",", "")
         elif len(name.split()) == 3 and len(name.split()[1]) > 2:
-            data[f"{source}FirstName"] = name.split()[1]
-            data[f"{source}LastName"] = name.split()[0]
-            data[f"{source}MiddleName"] = name.split()[2]
+            data[f"{source}FirstName"] = name.split()[1].replace(",", "")
+            data[f"{source}LastName"] = name.split()[0].replace(",", "")
+            data[f"{source}MiddleName"] = name.split()[2].replace(",", "")
+        elif len(name.split()) == 4 and len(name.strip().split()[-1]) == 1:
+            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
+            data[f"{source}MiddleName"] = name.split()[1].replace(",", "")
+            data[f"{source}LastName"] = name.split()[2].replace(",", "")
+            data[f"{source}NameExtra"] = name.split()[3].replace(",", "")
         elif len(name.split()) > 1 and name.split()[1][-1] == "," and len(name.split(",")[0].split()) == 2 and len(
                 name.split(",")[1].split()) == 2:
             data[f"{source}FirstName"] = name.split()[0].replace(",", "")
@@ -1178,26 +1197,26 @@ def getName(name: str, source: str):
     return data
 
 
-if __name__ == "__main__":
-    # initialize()
-    # getName('Babey, Jr. James M', 'Court')
-    # processAllJson()
-    main()
-    # with open('names.txt') as f:
-    #     for n in f.read().splitlines():
-    #         getCourtName(n)
-    # rows=[]
-    # with open('names.txt') as f:
-    #     for n in f.read().splitlines():
-    #         if "Blk" not in n:
-    #             rows.append(getName(n, "Court"))
-    # with open('names.csv', 'w', newline='') as f:
-    #     writer = csv.DictWriter(f, fieldnames=["CourtBusinessName", "CourtNameType", "CourtFirstName", "CourtMiddleName", "CourtLastName", "CourtNameExtra"])
-    #     writer.writeheader()
-    #     writer.writerows(rows)
+def getDistrictCode(county, district):
+    with open("District-Codes.json", "r") as jfile:
+        county_codes = json.load(jfile)
+    try:
+        for key1 in county_codes.keys():
+            if key1.upper() in county.upper() or county.upper() in key1.upper():
+                for key2 in county_codes[key1].keys():
+                    if key2.upper() in district.upper() or district.upper() in key2.upper():
+                        print(f"Found district code {county_codes[key1][key2]}")
+                        return county_codes[key1][key2]
+    except:
+        print(f"Invalid District {county}/{district}")
+        return None
 
-    # input("Done")
-    # if debug:
-    #     check()
-    # else:
-    #
+
+if __name__ == "__main__":
+    main()
+    # print(getNJactb('Union', "CLARK", "1", "1"))
+    # getTaxDataHub("Middlesex", "Caldwell", "1", "1")
+    # initialize()
+    # getName('Sylvia Nora Jennings S', 'Court')
+    # processAllJson()
+    # main()
