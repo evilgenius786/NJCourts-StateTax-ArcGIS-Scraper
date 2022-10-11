@@ -37,8 +37,12 @@ NjParcelsFirstName
 NjParcelsMiddleName
 NjParcelsLastName
 NjParcelsNameExtra
-CourtNormalizedPropertyAddress
 CourtPropertyAddress
+CourtNormalizedPropertyAddress
+Sift1PropStreet
+Sift1PropCity
+Sift1PropState
+Sift1PropZip
 TaxDataHubPropertyAddress
 TaxDataHubPropertyAddressStreet
 TaxDataHubPropertyAddressCity
@@ -74,6 +78,10 @@ NjPropertyRecordsPropertyAddressState
 NjPropertyRecordsPropertyAddressZip
 NjPropertyRecordsPropertyAddressCounty
 NjPropertyRecordsPropertyNormalizedAddress
+Sift2PropStreet
+Sift2PropCity
+Sift2PropState
+Sift2PropZip
 StateTax_Owner
 StateTaxMailingAddress
 StateTaxMailingAddressStreet
@@ -87,6 +95,10 @@ ArcGisMailingAddressCity
 ArcGisMailingAddressState
 ArcGisMailingAddressZip
 ArcGisMailingNormalizedAddress
+Sift1MailingStreet
+Sift1MailingCity
+Sift1MailingState
+Sift1MailingZip
 TaxDataHubMailingAddress
 TaxDataHubMailingAddressStreet
 TaxDataHubMailingAddressCity

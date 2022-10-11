@@ -34,7 +34,7 @@ other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
 debug = False
-test = True
+test = False
 headless = False
 images = True
 maximize = False
@@ -68,6 +68,14 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
+                if "CourtNormalizedPropertyAddress" in data:
+                    updated_data.update(breakNormalizeAddress(data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
+                if "NjPropertyRecordsPropertyNormalizedAddress" in data:
+                    updated_data.update(
+                        breakNormalizeAddress(data["NjPropertyRecordsPropertyNormalizedAddress"], "Sift2", 'Prop'))
+                if "ArcGisMailingNormalizedAddress" in data:
+                    updated_data.update(
+                        breakNormalizeAddress(data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
                 if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
                     updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
                                                                                       "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -844,10 +852,21 @@ def getGoogleAddress(street, county="", district=""):
         return ""
 
 
+def breakNormalizeAddress(addr, source, type_):
+    address = addr.split(',')
+    data = {
+        f'{source}{type_}Street': address[0].strip(),
+        f'{source}{type_}City': address[1].strip(),
+        f'{source}{type_}State': address[2].split()[0].strip(),
+        f'{source}{type_}Zip': address[2].split()[1].strip()
+    }
+    return data
+
+
 def main():
     initialize()
-    processAllJson()
-    exit()
+    # processAllJson()
+    # exit()
     if not os.path.isfile("LastRun.json"):
         option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
     else:
@@ -1010,7 +1029,7 @@ def getName(name: str, source: str):
         print(f"Error in name {name}")
     for key, val in data.items():
         if val:
-            newdata[key] = val.replace(',','').strip()
+            newdata[key] = val.replace(',', '').strip()
     return newdata
 
 
