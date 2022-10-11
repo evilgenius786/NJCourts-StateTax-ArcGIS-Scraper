@@ -402,53 +402,60 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
 
 
 def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
-    driver.get('https://njpropertyrecords.com')
-    print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
-    district_num = getDistrictCode(county, district)
-    if district_num is None:
-        print(f"District code not found for {county}/{district}")
-        return
-    term = f"{district_num}_{block}_{lot}"
-    if qual is not None:
-        term += f"_{qual}"
-    url = f"https://njpropertyrecords.com/property/{term}"
-    driver.get(url)
-    for i in range(60):
+    try:
+        driver.get('https://njpropertyrecords.com')
+        time.sleep(1)
+        print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
+        district_num = getDistrictCode(county, district)
+        if district_num is None:
+            print(f"District code not found for {county}/{district}")
+            return
+        term = f"{district_num}_{block}_{lot}"
+        if qual is not None:
+            term += f"_{qual}"
+        url = f"https://njpropertyrecords.com/property/{term}"
+        print(url)
+        driver.get(url)
+        time.sleep(1)
+        for i in range(60):
+            if "Checking if the site connection is secure" in driver.page_source:
+                time.sleep(1)
+                print('Checking if the site connection is secure')
+            else:
+                break
         if "Checking if the site connection is secure" in driver.page_source:
-            time.sleep(1)
-            print('Checking if the site connection is secure')
-        else:
-            break
-    if "Checking if the site connection is secure" in driver.page_source:
-        print("Error in fetching NJ Property Records")
-        return
-    soup = BeautifulSoup(driver.page_source, 'lxml')
-    h1 = soup.find('h1')
-    data = {
-        "County": county,
-        "District": district,
-        "URL": url,
-        'PropertyStreet': h1.text.strip(),
-        "PropertyCityStateZip": h1.parent.find('div').text.strip()
-    }
-    for i in ['overview', 'public-records']:
-        try:
-            for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
-                if ov.find('div') is None:
-                    continue
-                for line in ov.find('div').find_all("div"):
-                    if "Login" in line.text:
+            print("Error in fetching NJ Property Records")
+            return
+        soup = BeautifulSoup(driver.page_source, 'lxml')
+        h1 = soup.find('h1')
+        data = {
+            "County": county,
+            "District": district,
+            "URL": url,
+            'PropertyStreet': h1.text.strip(),
+            "PropertyCityStateZip": h1.parent.find('div').text.strip()
+        }
+        for i in ['overview', 'public-records']:
+            try:
+                for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
+                    if ov.find('div') is None:
                         continue
-                    l = line.find_all('div')
-                    if len(l) > 1:
-                        data[l[0].text] = l[1].text
-        except:
-            traceback.print_exc()
-    data['County'] = county
-    # print(json.dumps(data, indent=4))
-    with open(f"./NjPropertyRecords/{county}-{district}-{block}-{lot}-NJPR.json", "w") as jfile:
-        json.dump(data, jfile, indent=4)
-    return data
+                    for line in ov.find('div').find_all("div"):
+                        if "Login" in line.text:
+                            continue
+                        l = line.find_all('div')
+                        if len(l) > 1:
+                            data[l[0].text] = l[1].text
+            except:
+                traceback.print_exc()
+        data['County'] = county
+        # print(json.dumps(data, indent=4))
+        with open(f"./NjPropertyRecords/{county}-{district}-{block}-{lot}-NJPR.json", "w") as jfile:
+            json.dump(data, jfile, indent=4)
+        return data
+    except:
+        traceback.print_exc()
+        return None
 
 
 def getNjParcels(county, district, block, lot, qual=None):
