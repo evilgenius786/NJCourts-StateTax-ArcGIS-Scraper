@@ -68,14 +68,7 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
-                if "CourtNormalizedPropertyAddress" in data:
-                    updated_data.update(breakNormalizeAddress(data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
-                if "NjPropertyRecordsPropertyNormalizedAddress" in data:
-                    updated_data.update(
-                        breakNormalizeAddress(data["NjPropertyRecordsPropertyNormalizedAddress"], "Sift2", 'Prop'))
-                if "ArcGisMailingNormalizedAddress" in data:
-                    updated_data.update(
-                        breakNormalizeAddress(data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
+
                 if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
                     updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
                                                                                       "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -268,6 +261,14 @@ def processJson(f):
                     except:
                         traceback.print_exc()
                     updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
+                if "CourtNormalizedPropertyAddress" in data:
+                    updated_data.update(breakNormalizeAddress(data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
+                if "NjPropertyRecordsPropertyNormalizedAddress" in data:
+                    updated_data.update(
+                        breakNormalizeAddress(data["NjPropertyRecordsPropertyNormalizedAddress"], "Sift2", 'Prop'))
+                if "ArcGisMailingNormalizedAddress" in data:
+                    updated_data.update(
+                        breakNormalizeAddress(data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
             except:
                 print(f"Error processing {file} {property_}")
                 traceback.print_exc()
@@ -425,6 +426,9 @@ def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
                 break
         if "Checking if the site connection is secure" in driver.page_source:
             print("Error in fetching NJ Property Records")
+            return
+        if "Property Page Limit Reached" in driver.page_source:
+            print("Property Page Limit Reached")
             return
         soup = BeautifulSoup(driver.page_source, 'lxml')
         h1 = soup.find('h1')
