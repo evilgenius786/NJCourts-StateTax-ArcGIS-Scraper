@@ -428,7 +428,7 @@ def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
             print("Error in fetching NJ Property Records")
             return
         if "Property Page Limit Reached" in driver.page_source:
-            print("Property Page Limit Reached")
+            print("NJ Property Records Property Page Limit Reached")
             return
         soup = BeautifulSoup(driver.page_source, 'lxml')
         h1 = soup.find('h1')
