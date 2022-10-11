@@ -32,33 +32,17 @@ jdir = "ALL NJ-Court FORC DEFAULT"
 filter_dir = "All NJ-COURT Filtered Forc"
 other_dir = "Did NOT FILTER"
 changeddir = "changed"
-
-# ss = 'ss'
-# notrequired = []
-# nrfile = 'notrequired.txt'
 scrapedcsv = "NJ-Courts.csv"
-# outcsv = "Out.csv"
-debug = True
-test = False
+debug = False
+test = True
 headless = False
 images = True
 maximize = False
 incognito = False
 encoding = 'utf8'
-drivers = []
 nj_url = 'https://portal.njcourts.gov/CIVILCaseJacketWeb/pages/civilCaseSearch.faces'
 disclaimer = "https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces"
-
-SCOPES = [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive'
-]
-
-sheet = "https://docs.google.com/spreadsheets/d/1tAgPaFU1J5ObQWIl6AnQ69MauIsIOEP3BY6x_yGeRCI"
-sheet_headers = "https://docs.google.com/spreadsheets/d/1ZPr8vrUAnnJZY1wUEBmpGNnNFP8ieEf4qKXqfMNghyM"
-
 count = 1
-
 tdh = "https://www.taxdatahub.com"
 cpash = "County%20Property%20Assessment%20Search%20Hub"
 tax_data_url = {
@@ -67,14 +51,11 @@ tax_data_url = {
     "Essex": "6229fbf0ce4aef911f9de7bc",
     "Middlesex": "623085dd284c51d4d32ff9fe",
 }
-
 with open('fieldnames.txt') as ffile:
     fieldnames = ffile.read().splitlines()
 
 
 def processJson(f):
-    # with open('headers.json') as hfile:
-    #     headers = json.load(hfile)
     file = f"./{jdir}/{f}"
     print(f"Processing {file}")
     with open(file) as jfile:
@@ -104,38 +85,73 @@ def processJson(f):
                     name = data["Case Caption"].split("Vs")[1].strip()
                     updated_data['CourtBusinessName'] = name
                     updated_data.update(getName(name, "Court"))
-                if "NjPropertyRecords" in data and data["NjPropertyRecords"]:
-                    details = data["NjPropertyRecords"]["Details"]
-                    if "OwnerName" in details:
-                        updated_data['NjPropertyRecordsBusinessName'] = details['OwnerName']
-                        updated_data.update(getName(updated_data['NjPropertyRecordsBusinessName'], "NjPropertyRecords"))
-                    tax_data_hub_mail_addr = f"{details['OwnerStreet']}, {details['OwnerCityState']}, {details['OwnerZip']}"
-                    updated_data['NjPropertyRecordsMailingAddress'] = tax_data_hub_mail_addr
+                if "NjParcels" in data and data["NjParcels"]:
+                    details = data["NjParcels"]
+                    updated_data['NjParcelsBusinessName'] = details['fn']
+                    updated_data.update(getName(updated_data['NjParcelsBusinessName'], "NjParcels"))
+                    nj_parcels_mail_addr = f"{details['street-address']}, {details['locality']}, {details['postcode']}"
+                    updated_data['NjParcelsMailingAddress'] = nj_parcels_mail_addr
                     try:
-                        updated_data['NjPropertyRecordsMailingAddressStreet'] = details['OwnerStreet']
-                        city_state = details['OwnerCityState'].split(" ")
-                        updated_data['NjPropertyRecordsMailingAddressCity'] = " ".join(city_state[:-1])
-                        updated_data['NjPropertyRecordsMailingAddressState'] = city_state[-1]
-                        updated_data['NjPropertyRecordsMailingAddressZip'] = details['OwnerZip']
+                        updated_data['NjParcelsMailingAddressStreet'] = details['street-address']
+                        city_state = details['locality'].split()
+                        updated_data['NjParcelsMailingAddressCity'] = getCity(" ".join(city_state[:-1]))
+                        updated_data['NjParcelsMailingAddressState'] = city_state[-1]
+                        updated_data['NjParcelsMailingAddressZip'] = details['postcode']
+                    except:
+                        print(data['NjParcels'])
+                        traceback.print_exc()
+                    updated_data['NjParcelsMailingNormalizedAddress'] = getGoogleAddress(nj_parcels_mail_addr)
+                    dist = data['NjParcels']['District']
+                    dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
+                    if "County" not in data['NjParcels']:
+                        data['NjParcels']['County'] = ""
+                    csz = f"{dist} {data['NjParcels']['County']}, NJ"
+                    prop_street = details['cadastre'].split("is Block")[0]
+                    nj_parcels_prop_addr = f"{prop_street}, {csz}"
+                    updated_data['NjParcelsPropertyAddress'] = nj_parcels_prop_addr
+                    try:
+                        updated_data['NjParcelsPropertyAddressStreet'] = prop_street
+                        updated_data['NjParcelsPropertyAddressCity'] = getCity(dist)
+                        updated_data['NjParcelsPropertyAddressState'] = "NJ"
+                        updated_data['NjParcelsPropertyAddressZip'] = ""
+                        updated_data['NjParcelsPropertyAddressCounty'] = data['County']
+                    except:
+                        traceback.print_exc()
+                    updated_data['NjParcelsPropertyNormalizedAddress'] = getGoogleAddress(
+                        nj_parcels_prop_addr)
+                if "NjPropertyRecords" in data and data["NjPropertyRecords"]:
+                    details = data["NjPropertyRecords"]
+                    updated_data['NjPropertyRecordsBusinessName'] = details['Owner(s)']
+                    updated_data.update(getName(updated_data['NjPropertyRecordsBusinessName'], "NjPropertyRecords"))
+                    nj_prop_rec_mail_addr = f"{details['Mailing Address']}, {details['City State Zip']}"
+                    updated_data['NjPropertyRecordsMailingAddress'] = nj_prop_rec_mail_addr
+                    try:
+                        updated_data['NjPropertyRecordsMailingAddressStreet'] = details['Mailing Address']
+                        city_state_zip = details['City State Zip'].split()
+                        updated_data['NjPropertyRecordsMailingAddressCity'] = getCity(city_state_zip[0])
+                        updated_data['NjPropertyRecordsMailingAddressState'] = city_state_zip[-2]
+                        updated_data['NjPropertyRecordsMailingAddressZip'] = city_state_zip[-1]
                     except:
                         print(data['NjPropertyRecords'])
                         traceback.print_exc()
-                    updated_data['NjPropertyRecordsMailingNormalizedAddress'] = getGoogleAddress(tax_data_hub_mail_addr)
+                    updated_data['NjPropertyRecordsMailingNormalizedAddress'] = getGoogleAddress(nj_prop_rec_mail_addr)
                     dist = data['NjPropertyRecords']['District']
                     dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
                     if "County" not in data['NjPropertyRecords']:
                         data['NjPropertyRecords']['County'] = ""
-                    tax_data_hub_prop_addr = f"{details['PropertyLocation']}, {dist}, {data['NjPropertyRecords']['County']}"
-                    updated_data['NjPropertyRecordsPropertyAddress'] = tax_data_hub_prop_addr
+                    csz = details['PropertyCityStateZip']
+                    nj_prop_rec_prop_addr = f"{details['PropertyStreet']}, {csz}"
+                    updated_data['NjPropertyRecordsPropertyAddress'] = nj_prop_rec_prop_addr
                     try:
-                        updated_data['NjPropertyRecordsPropertyAddressStreet'] = details['PropertyLocation']
-                        updated_data['NjPropertyRecordsPropertyAddressCity'] = dist
+                        updated_data['NjPropertyRecordsPropertyAddressStreet'] = details['PropertyStreet']
+                        updated_data['NjPropertyRecordsPropertyAddressCity'] = getCity(dist)
+                        updated_data['NjPropertyRecordsPropertyAddressCounty'] = data['County']
                         updated_data['NjPropertyRecordsPropertyAddressState'] = "NJ"
                         updated_data['NjPropertyRecordsPropertyAddressZip'] = ""
-                        updated_data['NjPropertyRecordsPropertyAddressCounty'] = data['NjPropertyRecords']['County']
                     except:
                         traceback.print_exc()
-                    updated_data['NjPropertyRecordsPropertyNormalizedAddress'] = getGoogleAddress(tax_data_hub_prop_addr)
+                    updated_data['NjPropertyRecordsPropertyNormalizedAddress'] = getGoogleAddress(
+                        nj_prop_rec_prop_addr)
                 if "TaxDataHub" in data and data["TaxDataHub"] and "Details" in data["TaxDataHub"]:
                     details = data["TaxDataHub"]["Details"]
                     if "OwnerName" in details:
@@ -146,7 +162,7 @@ def processJson(f):
                     try:
                         updated_data['TaxDataHubMailingAddressStreet'] = details['OwnerStreet']
                         city_state = details['OwnerCityState'].split(" ")
-                        updated_data['TaxDataHubMailingAddressCity'] = " ".join(city_state[:-1])
+                        updated_data['TaxDataHubMailingAddressCity'] = getCity(" ".join(city_state[:-1]))
                         updated_data['TaxDataHubMailingAddressState'] = city_state[-1]
                         updated_data['TaxDataHubMailingAddressZip'] = details['OwnerZip']
                     except:
@@ -161,10 +177,10 @@ def processJson(f):
                     updated_data['TaxDataHubPropertyAddress'] = tax_data_hub_prop_addr
                     try:
                         updated_data['TaxDataHubPropertyAddressStreet'] = details['PropertyLocation']
-                        updated_data['TaxDataHubPropertyAddressCity'] = dist
+                        updated_data['TaxDataHubPropertyAddressCity'] = getCity(dist)
                         updated_data['TaxDataHubPropertyAddressState'] = "NJ"
                         updated_data['TaxDataHubPropertyAddressZip'] = ""
-                        updated_data['TaxDataHubPropertyAddressCounty'] = data['TaxDataHub']['County']
+                        updated_data['TaxDataHubPropertyAddressCounty'] = data['County']
                     except:
                         traceback.print_exc()
                     updated_data['TaxDataHubPropertyNormalizedAddress'] = getGoogleAddress(tax_data_hub_prop_addr)
@@ -185,8 +201,8 @@ def processJson(f):
                         if "," not in data['StateTax']['City State']:
                             data['StateTax']['City State'] = data['StateTax']['City State'].replace(" ", ", ", 1)
                         data['StateTax']['City State'] = data['StateTax']['City State'].replace(", , ", ", ")
-                        updated_data['StateTaxMailingAddressCity'] = data['StateTax']['City State'].split(",")[
-                            0].strip()
+                        updated_data['StateTaxMailingAddressCity'] = getCity(data['StateTax']['City State'].split(",")[
+                                                                                 0].strip())
                         updated_data['StateTaxMailingAddressState'] = \
                             data['StateTax']['City State'].split(",")[1].split()[
                                 0].strip()
@@ -205,10 +221,10 @@ def processJson(f):
                     updated_data['StateTaxPropertyAddress'] = state_tax_prop_addr
                     try:
                         updated_data['StateTaxPropertyAddressStreet'] = data['StateTax']['Prop Loc']
-                        updated_data['StateTaxPropertyAddressCity'] = dist
+                        updated_data['StateTaxPropertyAddressCity'] = getCity(dist)
                         updated_data['StateTaxPropertyAddressState'] = "NJ"
                         updated_data['StateTaxPropertyAddressZip'] = ""
-                        updated_data['StateTaxPropertyAddressCounty'] = data['StateTax']['County']
+                        updated_data['StateTaxPropertyAddressCounty'] = data['County']
                     except:
                         traceback.print_exc()
                     updated_data['StateTaxPropertyNormalizedAddress'] = getGoogleAddress(state_tax_prop_addr)
@@ -225,8 +241,8 @@ def processJson(f):
                     updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
                     try:
                         updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'].strip()
-
-                        updated_data['ArcGisMailingAddressCity'] = data['ArcGis']['CITY_STATE'].split(",")[0].strip()
+                        updated_data['ArcGisMailingAddressCity'] = getCity(
+                            data['ArcGis']['CITY_STATE'].split(",")[0].strip())
                         updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
                         updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
                     except:
@@ -235,15 +251,11 @@ def processJson(f):
                     updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
                     arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
                     updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
-
                     try:
                         updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
-                        updated_data['ArcGisPropertyAddressCity'] = data['ArcGis']['MUN_NAME']
-                        for word in ['Twnshp', 'City', 'Boro', 'Twp']:
-                            updated_data['ArcGisPropertyAddressCity'] = updated_data[
-                                'ArcGisPropertyAddressCity'].replace(word.upper(), '')
+                        updated_data['ArcGisPropertyAddressCity'] = getCity(data['ArcGis']['MUN_NAME'].title())
                         updated_data['ArcGisPropertyAddressState'] = "NJ"
-                        updated_data['ArcGisPropertyAddressCounty'] = data['ArcGis']['COUNTY']
+                        updated_data['ArcGisPropertyAddressCounty'] = data['County']
                         updated_data['ArcGisPropertyAddressZip'] = ""
                     except:
                         traceback.print_exc()
@@ -262,10 +274,6 @@ def processJson(f):
     else:
         newfile = f"./CSV_json/CSV-{f}.json".replace("/", "_")
         updated_data = flatten_json(data)
-        # updated_data = {}
-        # for key, value in new_data.items():
-        #     if key in headers:
-        #         updated_data[headers[key]] = value
         updated_data['Comments'] = updated_data.copy()
         with open(newfile, 'w') as jfile:
             json.dump(updated_data, jfile, indent=4)
@@ -275,13 +283,19 @@ def processJson(f):
         CategorizeJson(f)
 
 
+def getCity(city):
+    for word in ['Twnshp', 'City', 'Boro', 'Twp', 'Borough', 'Township']:
+        city = city.replace(word, '')
+    return city
+
+
 def getTaxDataHub(county, district, block, lot, qual=None):
     print(f"Fetching TaxDataHub records for {county}/{district}/{block}/{lot}")
     district_number = getDistrictCode(county, district)
     if district_number is None:
         print(f"District code not found for {county}/{district}")
         return
-    did=f"{district_number}_{block}_{lot}"
+    did = f"{district_number}_{block}_{lot}"
     if qual is not None:
         did = f"{did}_{qual}"
     url = f"{tdh}/{tax_data_url[county]}/{county}-{cpash}/details?id={did}"
@@ -293,7 +307,7 @@ def getTaxDataHub(county, district, block, lot, qual=None):
         if "DetailField" in line:
             continue
         data[line.strip().split()[0].split(".")[1]] = json.loads(line.split("=", 1)[1].strip()[:-1])
-    print(json.dumps(data, indent=4))
+    # print(json.dumps(data, indent=4))
     with open(f"./TaxDataHub/{county}-{district}-{block}-{lot}-TaxDataHub.json", "w") as jfile:
         json.dump(data, jfile, indent=4)
     return data
@@ -366,7 +380,7 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
                     elif td.text.strip() != "&nbsp":
                         row[th] = td.text.replace("&nbsp", "").strip()
                 data["TAX-LIST-HISTORY"].append(row)
-            print(json.dumps(data, indent=4))
+            # print(json.dumps(data, indent=4))
             with open(f"./StateTax/{county}-{district}-{block}-{lot}-NJATCB.json", "w") as jfile:
                 json.dump(data, jfile, indent=4)
             return data
@@ -380,20 +394,35 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
 
 
 def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
+    driver.get('https://njpropertyrecords.com')
     print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
     district_num = getDistrictCode(county, district)
     if district_num is None:
+        print(f"District code not found for {county}/{district}")
         return
     term = f"{district_num}_{block}_{lot}"
     if qual is not None:
         term += f"_{qual}"
     url = f"https://njpropertyrecords.com/property/{term}"
     driver.get(url)
-    while "Checking if the site connection is secure" in driver.page_source:
-        time.sleep(1)
-        print('Checking if the site connection is secure')
+    for i in range(60):
+        if "Checking if the site connection is secure" in driver.page_source:
+            time.sleep(1)
+            print('Checking if the site connection is secure')
+        else:
+            break
+    if "Checking if the site connection is secure" in driver.page_source:
+        print("Error in fetching NJ Property Records")
+        return
     soup = BeautifulSoup(driver.page_source, 'lxml')
-    data = {}
+    h1 = soup.find('h1')
+    data = {
+        "County": county,
+        "District": district,
+        "URL": url,
+        'PropertyStreet': h1.text.strip(),
+        "PropertyCityStateZip": h1.parent.find('div').text.strip()
+    }
     for i in ['overview', 'public-records']:
         try:
             for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
@@ -407,7 +436,10 @@ def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
                         data[l[0].text] = l[1].text
         except:
             traceback.print_exc()
+    data['County'] = county
     # print(json.dumps(data, indent=4))
+    with open(f"./NjPropertyRecords/{county}-{district}-{block}-{lot}-NJPR.json", "w") as jfile:
+        json.dump(data, jfile, indent=4)
     return data
 
 
@@ -422,7 +454,7 @@ def getNjParcels(county, district, block, lot, qual=None):
         term += f"/{qual}"
     url = f"https://njparcels.com/property/{term}"
     soup = BeautifulSoup(requests.get(url).content, 'lxml')
-    data = {}
+    data = {"County": county, "District": district, "URL": url}
     try:
         data["cadastre"] = soup.find("p", {"class": "cadastre"}).text
     except:
@@ -437,6 +469,8 @@ def getNjParcels(county, district, block, lot, qual=None):
         data[tr.find('th').text] = tr.find('td').text
     data['description'] = "\n".join([p.text for p in soup.find('div', {'class': 'col-md-7'}).find_all('p')])
     # print(json.dumps(data, indent=4))
+    with open(f"./NjParcels/{county}-{district}-{block}-{lot}-NjParcels.json", "w") as jfile:
+        json.dump(data, jfile, indent=4)
     return data
 
 
@@ -608,6 +642,9 @@ def getData(soup, driver, n, y):
                     elif county == "Ocean":
                         tab_data["StateTax"] = getOcean(district, block, lot, qual)
                     else:
+                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
+                    if county in ['Middlesex', 'Essex']:
                         tab_data["StateTax"] = getNJactb(county, district, block, lot,
                                                          tab_data["Municipality"].split("-")[0].strip(), qual)
                     tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
@@ -808,9 +845,9 @@ def getGoogleAddress(street, county="", district=""):
 
 
 def main():
-    processDocketNums()
-    exit()
     initialize()
+    processAllJson()
+    exit()
     if not os.path.isfile("LastRun.json"):
         option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
     else:
@@ -884,6 +921,9 @@ def checkDisclaimer(driver):
 
 def getName(name: str, source: str):
     data = {f"{source}BusinessName": name}
+    newdata = {}
+    if "Blk" in name or "Block" in name or "Lot" in name:
+        return data
     try:
         if len(name.strip().split()) == 1:
             return data
@@ -903,73 +943,75 @@ def getName(name: str, source: str):
                 data[f'{source}NameExtra'] = extra
                 name = name.replace(extra, "").strip()
         if "Executri" in name:
-            data[f'{source}NameExtra'] = name.split(",")[1].replace(",", "")
-            data[f'{source}FirstName'] = name.split(",")[0].split()[0].replace(",", "")
-            data[f'{source}LastName'] = name.split(",")[0].split()[-1].replace(",", "")
+            data[f'{source}NameExtra'] = name.split(",")[1]
+            data[f'{source}FirstName'] = name.split(",")[0].split()[0]
+            data[f'{source}LastName'] = name.split(",")[0].split()[-1]
             data[f'{source}NameType'] = "GOVT OWNED"
         elif "Her Heirs" in name:
             data[f'{source}NameExtra'] = "Her Heirs"
             name = name.replace("Her Heirs", "").strip()
             if "," in name:
-                data[f'{source}FirstName'] = name.split(",")[-1].replace(",", "")
-                data[f'{source}LastName'] = name.split(",")[0].replace(",", "")
-
+                data[f'{source}FirstName'] = name.split(",")[-1]
+                data[f'{source}LastName'] = name.split(",")[0]
             else:
-                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr".replace(",", "")
-                data[f'{source}LastName'] = name.split()[0].replace(",", "")
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
+                data[f'{source}LastName'] = name.split()[0]
         elif "His Heirs" in name:
             data[f'{source}NameExtra'] = "Jr"
             name = name.replace("His Heirs", "").strip()
             if "," in name:
-                data[f'{source}FirstName'] = name.split(",")[-1].replace(",", "")
-                data[f'{source}LastName'] = name.split(",")[0].replace(",", "")
+                data[f'{source}FirstName'] = name.split(",")[-1]
+                data[f'{source}LastName'] = name.split(",")[0]
             else:
-                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr".replace(",", "")
-                data[f'{source}LastName'] = name.split()[0].replace(",", "")
+                data[f'{source}FirstName'] = f"{name.split()[-1]} Jr"
+                data[f'{source}LastName'] = name.split()[0]
         elif "vs state of" in name.lower():
             data[f'{source}NameType'] = "GOVT OWNED"
-        elif "llc" in name.lower() or "inc" in name.lower():
+        elif " llc " in name.lower() or " inc " in name.lower() or " asso" in name.lower() or "corp" in name.lower() or "company" in name.lower():
             data[f'{source}NameType'] = "Company"
         elif "-" in name and len(name.split()) == 2:
-            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
-            data[f"{source}LastName"] = name.split()[1].replace(",", "")
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}LastName"] = name.split()[1]
         elif len(name.split()) == 2:
             if "," in name:
-                data[f"{source}FirstName"] = name.split(",")[-1].replace(",", "")
-                data[f"{source}LastName"] = name.split(",")[0].replace(",", "")
+                data[f"{source}FirstName"] = name.split(",")[-1]
+                data[f"{source}LastName"] = name.split(",")[0]
             else:
-                data[f"{source}FirstName"] = name.split()[0].replace(",", "")
-                data[f"{source}LastName"] = name.split()[-1].replace(",", "")
+                data[f"{source}FirstName"] = name.split()[0]
+                data[f"{source}LastName"] = name.split()[-1]
         elif len(name.split()) == 3 and len(name.strip().split()[1]) < 3:
-            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
-            data[f"{source}MiddleName"] = name.split()[1].replace(",", "")
-            data[f"{source}LastName"] = name.split()[2].replace(",", "")
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}MiddleName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[2]
         elif len(name.split()) == 3 and len(name.split()[1]) > 2:
-            data[f"{source}FirstName"] = name.split()[1].replace(",", "")
-            data[f"{source}LastName"] = name.split()[0].replace(",", "")
-            data[f"{source}MiddleName"] = name.split()[2].replace(",", "")
+            data[f"{source}FirstName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[0]
+            data[f"{source}MiddleName"] = name.split()[2]
         elif len(name.split()) == 4 and len(name.strip().split()[-1]) == 1:
-            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
-            data[f"{source}MiddleName"] = name.split()[1].replace(",", "")
-            data[f"{source}LastName"] = name.split()[2].replace(",", "")
-            data[f"{source}NameExtra"] = name.split()[3].replace(",", "")
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}MiddleName"] = name.split()[1]
+            data[f"{source}LastName"] = name.split()[2]
+            data[f"{source}NameExtra"] = name.split()[3]
         elif len(name.split()) > 1 and name.split()[1][-1] == "," and len(name.split(",")[0].split()) == 2 and len(
                 name.split(",")[1].split()) == 2:
-            data[f"{source}FirstName"] = name.split()[0].replace(",", "")
-            data[f"{source}LastName"] = name.split()[1][:-1].replace(",", "")
-            data[f"{source}MiddleName"] = name.split(",")[1].replace(",", "").strip()
+            data[f"{source}FirstName"] = name.split()[0]
+            data[f"{source}LastName"] = name.split()[1][:-1]
+            data[f"{source}MiddleName"] = name.split(",")[1]
         elif name.split()[0][-1] == ",":
-            data[f'{source}FirstName'] = name.split()[0][:-1].replace(",", "")
-            data[f'{source}LastName'] = name.split(",")[1].split()[0].replace(",", "")
+            data[f'{source}FirstName'] = name.split()[0][:-1]
+            data[f'{source}LastName'] = name.split(",")[1].split()[0]
             if len(name.split(",")[1].split()) > 2:
-                data[f'{source}MiddleName'] = name.split(",")[1].split()[1].replace(",", "")
+                data[f'{source}MiddleName'] = name.split(",")[1].split()[1]
         print(json.dumps(data, indent=4))
+
     except:
         print(len(name.split()))
         traceback.print_exc()
         print(f"Error in name {name}")
-        # input("Press enter...")
-    return data
+    for key, val in data.items():
+        if val:
+            newdata[key] = val.replace(',','').strip()
+    return newdata
 
 
 def getDistrictCode(county, district):
@@ -1049,7 +1091,10 @@ _______________________________________________________________
 def initialize():
     # global notrequired
     logo()
-    for directory in [jdir, changeddir, 'StateTax', 'ArcGis', filter_dir, 'CSV_json', 'TaxDataHub',
+    if debug:
+        print("Make sure Selenium Chrome is running...")
+    for directory in [jdir, changeddir, filter_dir,
+                      'StateTax', 'ArcGis', 'CSV_json', 'TaxDataHub', 'NjPropertyRecords', 'NjParcels'
                       # "notreq", ss
                       ]:
         if not os.path.isdir(directory):
@@ -1155,11 +1200,12 @@ def CategorizeAllJson():
 
 def SearchBlockLot():
     if os.path.isfile("block-lot.csv"):
-        with open("block-lot.csv", 'r', encoding='utf-8-sig') as infile:
+        with open("block-lot.csv", 'r', encoding='utf-8-sig') as ifile:
             # print(infile.read())
-            reader = csv.DictReader(infile)
+            reader = csv.DictReader(ifile)
             data = {}
             for row in reader:
+                processBlockLot(data, row)
                 processBlockLot(data, row)
     else:
         print("No block-lot.csv file found")
@@ -1168,14 +1214,13 @@ def SearchBlockLot():
 def getChromeDriver(proxy=None):
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
+    print("PDF Download directory: " + download_dir)
+    if not os.path.exists(download_dir):
+        os.makedirs(download_dir)
     if debug:
         # print("Connecting existing Chrome for debugging...")
         options.debugger_address = "127.0.0.1:9222"
     else:
-
-        print("PDF Download directory: " + download_dir)
-        if not os.path.exists(download_dir):
-            os.makedirs(download_dir)
         options.add_experimental_option('prefs', {
             "download.default_directory": download_dir,
             "download.prompt_for_download": False,
