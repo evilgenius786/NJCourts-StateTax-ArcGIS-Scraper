@@ -5,13 +5,6 @@ import time
 import traceback
 from time import sleep
 
-# import gspread
-# from google.oauth2 import service_account
-# from googleapiclient.discovery import build
-# from oauth2client.service_account import ServiceAccountCredentials
-# import PyPDF2
-# import openpyxl
-
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -27,20 +20,6 @@ import json
 t = 1
 timeout = 10
 
-# valid = {
-#     "Case Status": "Active",
-#     "Case Type": [
-#         "In Rem Tax Foreclosure",
-#         "In Personam Tax Foreclosure"
-#     ],
-#     "Docket Text": [
-#         "fixing amount/time/place",
-#         "Motion for final judgment",
-#         "MISCELLANEOUS MOTION",
-#         "Abandoned Property"
-#     ],
-#     "Venue": ["Bergen", "Essex", "Hudson", "Middlesex", "Monmouth", "Morris", "Passaic", "Somerset", "Union"],
-# }
 lastrun = {"StartYear": 22, "EndYear": 22, "StartNumber": 1, "EndNumber": 100, "CurrentYear": 22, "CurrentNumber": 1}
 if os.path.isfile("LastRun.json"):
     with open("LastRun.json", 'r') as infile:
@@ -54,12 +33,13 @@ filter_dir = "All NJ-COURT Filtered Forc"
 other_dir = "Did NOT FILTER"
 changeddir = "changed"
 
-ss = 'ss'
-notrequired = []
-nrfile = 'notrequired.txt'
+# ss = 'ss'
+# notrequired = []
+# nrfile = 'notrequired.txt'
 scrapedcsv = "NJ-Courts.csv"
 # outcsv = "Out.csv"
-debug = False
+debug = True
+test = False
 headless = False
 images = True
 maximize = False
@@ -90,43 +70,6 @@ tax_data_url = {
 
 with open('fieldnames.txt') as ffile:
     fieldnames = ffile.read().splitlines()
-
-
-def processHeaders():
-    with open('headers.txt') as hfile:
-        headers = hfile.readlines()
-    data = {}
-    for line in headers:
-        line = line.strip().split("\t")
-        if len(line) == 2 and line[0] != "" and line[1] != "":
-            data[line[1]] = line[0]
-    print(json.dumps(data, indent=4))
-    with open('headers.json', 'w') as outfile:
-        json.dump(data, outfile, indent=4)
-
-
-def flatten_json(y):
-    out = {}
-
-    def flatten(x, name=''):
-        if type(x) is dict:
-            for a in x:
-                flatten(x[a], name + a + '_')
-        elif type(x) is list:
-            i = 0
-            for a in x:
-                flatten(a, name + str(i) + '_')
-                i += 1
-        else:
-            out[name[:-1]] = x
-
-    flatten(y)
-    return out
-
-
-def append(data):
-    with open(scrapedcsv, 'a', newline='', encoding=encoding) as sfile:
-        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(data)
 
 
 def processJson(f):
@@ -161,8 +104,71 @@ def processJson(f):
                     name = data["Case Caption"].split("Vs")[1].strip()
                     updated_data['CourtBusinessName'] = name
                     updated_data.update(getName(name, "Court"))
+                if "NjPropertyRecords" in data and data["NjPropertyRecords"]:
+                    details = data["NjPropertyRecords"]["Details"]
+                    if "OwnerName" in details:
+                        updated_data['NjPropertyRecordsBusinessName'] = details['OwnerName']
+                        updated_data.update(getName(updated_data['NjPropertyRecordsBusinessName'], "NjPropertyRecords"))
+                    tax_data_hub_mail_addr = f"{details['OwnerStreet']}, {details['OwnerCityState']}, {details['OwnerZip']}"
+                    updated_data['NjPropertyRecordsMailingAddress'] = tax_data_hub_mail_addr
+                    try:
+                        updated_data['NjPropertyRecordsMailingAddressStreet'] = details['OwnerStreet']
+                        city_state = details['OwnerCityState'].split(" ")
+                        updated_data['NjPropertyRecordsMailingAddressCity'] = " ".join(city_state[:-1])
+                        updated_data['NjPropertyRecordsMailingAddressState'] = city_state[-1]
+                        updated_data['NjPropertyRecordsMailingAddressZip'] = details['OwnerZip']
+                    except:
+                        print(data['NjPropertyRecords'])
+                        traceback.print_exc()
+                    updated_data['NjPropertyRecordsMailingNormalizedAddress'] = getGoogleAddress(tax_data_hub_mail_addr)
+                    dist = data['NjPropertyRecords']['District']
+                    dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
+                    if "County" not in data['NjPropertyRecords']:
+                        data['NjPropertyRecords']['County'] = ""
+                    tax_data_hub_prop_addr = f"{details['PropertyLocation']}, {dist}, {data['NjPropertyRecords']['County']}"
+                    updated_data['NjPropertyRecordsPropertyAddress'] = tax_data_hub_prop_addr
+                    try:
+                        updated_data['NjPropertyRecordsPropertyAddressStreet'] = details['PropertyLocation']
+                        updated_data['NjPropertyRecordsPropertyAddressCity'] = dist
+                        updated_data['NjPropertyRecordsPropertyAddressState'] = "NJ"
+                        updated_data['NjPropertyRecordsPropertyAddressZip'] = ""
+                        updated_data['NjPropertyRecordsPropertyAddressCounty'] = data['NjPropertyRecords']['County']
+                    except:
+                        traceback.print_exc()
+                    updated_data['NjPropertyRecordsPropertyNormalizedAddress'] = getGoogleAddress(tax_data_hub_prop_addr)
+                if "TaxDataHub" in data and data["TaxDataHub"] and "Details" in data["TaxDataHub"]:
+                    details = data["TaxDataHub"]["Details"]
+                    if "OwnerName" in details:
+                        updated_data['TaxDataHubBusinessName'] = details['OwnerName']
+                        updated_data.update(getName(updated_data['TaxDataHubBusinessName'], "TaxDataHub"))
+                    tax_data_hub_mail_addr = f"{details['OwnerStreet']}, {details['OwnerCityState']}, {details['OwnerZip']}"
+                    updated_data['TaxDataHubMailingAddress'] = tax_data_hub_mail_addr
+                    try:
+                        updated_data['TaxDataHubMailingAddressStreet'] = details['OwnerStreet']
+                        city_state = details['OwnerCityState'].split(" ")
+                        updated_data['TaxDataHubMailingAddressCity'] = " ".join(city_state[:-1])
+                        updated_data['TaxDataHubMailingAddressState'] = city_state[-1]
+                        updated_data['TaxDataHubMailingAddressZip'] = details['OwnerZip']
+                    except:
+                        print(data['TaxDataHub'])
+                        traceback.print_exc()
+                    updated_data['TaxDataHubMailingNormalizedAddress'] = getGoogleAddress(tax_data_hub_mail_addr)
+                    dist = data['TaxDataHub']['District']
+                    dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
+                    if "County" not in data['TaxDataHub']:
+                        data['TaxDataHub']['County'] = ""
+                    tax_data_hub_prop_addr = f"{details['PropertyLocation']}, {dist}, {data['TaxDataHub']['County']}"
+                    updated_data['TaxDataHubPropertyAddress'] = tax_data_hub_prop_addr
+                    try:
+                        updated_data['TaxDataHubPropertyAddressStreet'] = details['PropertyLocation']
+                        updated_data['TaxDataHubPropertyAddressCity'] = dist
+                        updated_data['TaxDataHubPropertyAddressState'] = "NJ"
+                        updated_data['TaxDataHubPropertyAddressZip'] = ""
+                        updated_data['TaxDataHubPropertyAddressCounty'] = data['TaxDataHub']['County']
+                    except:
+                        traceback.print_exc()
+                    updated_data['TaxDataHubPropertyNormalizedAddress'] = getGoogleAddress(tax_data_hub_prop_addr)
                 if "StateTax" in data and data["StateTax"]:
-
                     tl = 'Tax List Details - Current Year'
                     if "Owner" in data['StateTax']:
                         updated_data['StateTaxBusinessName'] = data['StateTax']['Owner']
@@ -248,8 +254,8 @@ def processJson(f):
                 # input("Press any key...")
             newfile = f"./CSV_json/CSV-{f.replace('/', '_').replace('.json', '')}-{data['Label'].replace('/', '_')}.json"
             updated_data['Comments'] = updated_data.copy()
-            # if debug:
-            #     print(updated_data.keys())
+            if test:
+                print(updated_data.keys())
             with open(newfile, 'w') as jfile:
                 json.dump(updated_data, jfile, indent=4)
             append(updated_data)
@@ -264,75 +270,21 @@ def processJson(f):
         with open(newfile, 'w') as jfile:
             json.dump(updated_data, jfile, indent=4)
         append(updated_data)
-    if not debug:
+    if not test:
         convert(scrapedcsv)
         CategorizeJson(f)
 
 
-def getApn(url):
-    apn = url.split("&l02=")[1].replace("_________M", "").replace('____', '-0000-')
-    return f"{apn[2:4]} {apn[4:]}"
-
-
-def processAllJson():
-    for f in os.listdir(jdir):
-        if not f.endswith(".json"):
-            continue
-        processJson(f)
-    convert(scrapedcsv)
-
-
-def convert(filename):
-    # wb = openpyxl.Workbook()
-    # ws = wb.active
-    # with open(filename, encoding=encoding) as f:
-    #     reader = csv.reader(f, delimiter=',')
-    #     for row in reader:
-    #         ws.append(row)
-    # wb.save(filename.replace("csv", "xlsx"))
-    pd.read_csv(filename, encoding=encoding).to_excel(filename.replace("csv", "xlsx"), index=False)
-
-
-def CategorizeAllJson():
-    for f in os.listdir(jdir):
-        if not f.endswith(".json"):
-            continue
-        CategorizeJson(f)
-
-
-def CategorizeJson(file):
-    casetypes = ['Residential', 'Personam', 'Rem', 'Commercial', 'STRICT', 'Condominium', 'Time Share', 'FAIR']
-    with open(f"./{jdir}/{file}") as jfile:
-        data = json.load(jfile)
-    found = False
-    for casetype in casetypes:
-        if casetype.lower() in data['Case Type'].lower():
-            found = True
-            print(f"'{casetype}' found in ({data['Case Type']}) ({data['Docket Number']})")
-            if not os.path.isdir(f"./{filter_dir}/{casetype}"):
-                os.mkdir(f"./{filter_dir}/{casetype}")
-            with open(f"./{filter_dir}/{casetype}/{file}", 'w') as jfile:
-                json.dump(data, jfile, indent=4)
-            if casetype == 'Personam' or casetype == 'Rem':
-                if not os.path.isdir(f"./{filter_dir}/{tax_dir}"):
-                    os.mkdir(f"./{filter_dir}/{tax_dir}")
-                with open(f"./{filter_dir}/{tax_dir}/{file}", 'w') as jfile:
-                    json.dump(data, jfile, indent=4)
-    if not found:
-        print(f"Nothing found ({data['Case Type']}) ({data['Docket Number']})")
-        if not os.path.isdir(f"./{filter_dir}/{other_dir}"):
-            os.mkdir(f"./{filter_dir}/{other_dir}")
-        with open(f"./{filter_dir}/{other_dir}/{file}", 'w') as nfile:
-            json.dump(data, nfile, indent=4)
-
-
-def getTaxDataHub(county, district, block, lot):
+def getTaxDataHub(county, district, block, lot, qual=None):
     print(f"Fetching TaxDataHub records for {county}/{district}/{block}/{lot}")
     district_number = getDistrictCode(county, district)
     if district_number is None:
         print(f"District code not found for {county}/{district}")
         return
-    url = f"{tdh}/{tax_data_url[county]}/{county}-{cpash}/details?id={district_number}_{block}_{lot}"
+    did=f"{district_number}_{block}_{lot}"
+    if qual is not None:
+        did = f"{did}_{qual}"
+    url = f"{tdh}/{tax_data_url[county]}/{county}-{cpash}/details?id={did}"
     print(url)
     data = {"County": county, "District": district, "URL": url}
     soup = BeautifulSoup(requests.get(url).text, "html.parser")
@@ -341,14 +293,16 @@ def getTaxDataHub(county, district, block, lot):
         if "DetailField" in line:
             continue
         data[line.strip().split()[0].split(".")[1]] = json.loads(line.split("=", 1)[1].strip()[:-1])
-    # print(json.dumps(data, indent=4))
+    print(json.dumps(data, indent=4))
+    with open(f"./TaxDataHub/{county}-{district}-{block}-{lot}-TaxDataHub.json", "w") as jfile:
+        json.dump(data, jfile, indent=4)
     return data
 
 
-def getNJactb(county, district, block, lot, district_number=None):
+def getNJactb(county, district, block, lot, district_number=None, qual=None):
     try:
         data = {"County": county, "District": district}
-        print(f"Fetching records for {county}/{district}/{block}/{lot}")
+        print(f"Fetching NJATCB records for {county}/{district}/{block}/{lot}")
         if district_number is None:
             district_number = getDistrictCode(county, district)
             if district_number is None:
@@ -370,7 +324,7 @@ def getNJactb(county, district, block, lot, district_number=None):
             'owner': '',
             'block': block,
             'lot': lot,
-            'qual': ''
+            'qual': qual if qual is not None else '',
         }
         response = requests.post('http://tax1.co.monmouth.nj.us/cgi-bin/inf.cgi', headers=headers, data=req_data,
                                  verify=False)
@@ -425,7 +379,68 @@ def getNJactb(county, district, block, lot, district_number=None):
         return None
 
 
-def getOcean(district, block, lot):
+def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
+    print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
+    district_num = getDistrictCode(county, district)
+    if district_num is None:
+        return
+    term = f"{district_num}_{block}_{lot}"
+    if qual is not None:
+        term += f"_{qual}"
+    url = f"https://njpropertyrecords.com/property/{term}"
+    driver.get(url)
+    while "Checking if the site connection is secure" in driver.page_source:
+        time.sleep(1)
+        print('Checking if the site connection is secure')
+    soup = BeautifulSoup(driver.page_source, 'lxml')
+    data = {}
+    for i in ['overview', 'public-records']:
+        try:
+            for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
+                if ov.find('div') is None:
+                    continue
+                for line in ov.find('div').find_all("div"):
+                    if "Login" in line.text:
+                        continue
+                    l = line.find_all('div')
+                    if len(l) > 1:
+                        data[l[0].text] = l[1].text
+        except:
+            traceback.print_exc()
+    # print(json.dumps(data, indent=4))
+    return data
+
+
+def getNjParcels(county, district, block, lot, qual=None):
+    print(f"Fetching NjParcels records for {county}/{district}/{block}/{lot}")
+    district_num = getDistrictCode(county, district)
+    if district_num is None:
+        print(f"Invalid District {county}/{district}")
+        return
+    term = f"{district_num}/{block}/{lot}"
+    if qual is not None:
+        term += f"/{qual}"
+    url = f"https://njparcels.com/property/{term}"
+    soup = BeautifulSoup(requests.get(url).content, 'lxml')
+    data = {}
+    try:
+        data["cadastre"] = soup.find("p", {"class": "cadastre"}).text
+    except:
+        print(f"Invalid parcel {county}/{district}/{block}/{lot} {url}")
+        traceback.print_exc()
+        return None
+    for field in ['fn', 'street-address', 'locality', 'postcode']:
+        data[field] = soup.find('span', {'class': field}).text
+    for tr in soup.find('table').find_all('tr'):
+        if tr.find('th') is None:
+            continue
+        data[tr.find('th').text] = tr.find('td').text
+    data['description'] = "\n".join([p.text for p in soup.find('div', {'class': 'col-md-7'}).find_all('p')])
+    # print(json.dumps(data, indent=4))
+    return data
+
+
+def getOcean(district, block, lot, qual=None):
     try:
         print(f"Fetching records for Ocean/{district}/{block}/{lot}")
         headers = {'user-agent': 'Mozilla/5.0'}
@@ -440,16 +455,33 @@ def getOcean(district, block, lot):
             '__VIEWSTATEGENERATOR': soup.find("input", {"id": "__VIEWSTATEGENERATOR"})["value"],
             '__EVENTVALIDATION': soup.find("input", {"id": "__EVENTVALIDATION"})["value"],
             'ctl00$LogoFreeholders$FreeholderHistory$FreeholderAccordion_AccordionExtender_ClientState': '-1',
-            'ctl00$MainContent$cmbDistrict': district_num[2:],
+            'ctl00$MainContent$cmbDistrict': int(district_num[2:]),
             'ctl00$MainContent$txtBlock': block,
             'ctl00$MainContent$txtLot': lot,
             'ctl00$MainContent$btnSearch': 'Search'
         }
         response = requests.post('https://tax.co.ocean.nj.us/frmTaxBoardTaxListSearch', headers=headers, data=req_data)
         soup = BeautifulSoup(response.content, 'lxml')
-        ahrefs = soup.find("table", {"id": "MainContent_m_DataTable"}).find_all("a", {"target": "_blank"})
-        print(f"Found {len(ahrefs)} records")
-        href = "https://tax.co.ocean.nj.us/" + ahrefs[0]["href"]
+        table = soup.find("table", {"id": "MainContent_m_DataTable"})
+        if table is None:
+            print(f"==No data found for district ({district_num}) Ocean/{district}/{block}/{lot}")
+            return None
+        if qual is not None:
+            href = ""
+            for tr in soup.find('table', {'id': 'MainContent_m_DataTable'}):
+                if tr.find('td') is None:
+                    continue
+                if qual in tr.text:
+                    href = tr.find('a')['href']
+                    break
+            if href == "":
+                print(f"==No data found for district ({district_num}) Ocean/{district}/{block}/{lot}")
+                return None
+        else:
+            ahrefs = table.find_all("a", {"target": "_blank"})
+            print(f"Found {len(ahrefs)} records")
+            href = ahrefs[0]["href"]
+            href = f"https://tax.co.ocean.nj.us/{href}"
         print(f"Working on url ({block}/{lot}) {href}")
         content = requests.get(href).content
         soup = BeautifulSoup(content, 'lxml')
@@ -486,7 +518,7 @@ def getOcean(district, block, lot):
         return None
 
 
-def getArcGis(county, district, block, lot):
+def getArcGis(county, district, block, lot, qual=None):
     try:
         attrib = {"County": county, "District": district}
         print(f"Fetching ARCGIS records for {county}/{district}/{block}/{lot}")
@@ -536,209 +568,6 @@ def getArcGis(county, district, block, lot):
         return None
 
 
-def isValidDocket(data):
-    return True
-    # for txt in valid["Docket Text"]:
-    #     if txt.lower() in str(data).lower():
-    #         return True
-    # return False
-
-
-def isValid(data):
-    return True
-    # if data["Case Status"].lower() != valid['Case Status'].lower():
-    #     pprint(f"Case Status not active ({data['Case Status']})")
-    #     return False
-    # for ct in valid['Case Type']:
-    #     if ct.lower() in data['Case Type'].lower():
-    #         return True
-    # pprint(f"Not required ({data['Docket Number']})")
-    # return False
-
-
-def processNjCourts():
-    if not os.path.isfile("LastRun.json"):
-        lastrun['StartNumber'] = int(input("Enter starting number: "))
-        lastrun['EndNumber'] = int(input("Enter ending number: "))
-        lastrun['StartYear'] = int(input("Enter starting year: "))
-        lastrun['EndYear'] = int(input("Enter ending year: "))
-        lastrun['CurrentYear'] = lastrun['StartYear']
-        lastrun['CurrentNumber'] = lastrun['StartNumber']
-        with open("LastRun.json", "w") as outfile:
-            json.dump(lastrun, outfile, indent=4)
-    else:
-        print("Resuming from last run")
-        print(json.dumps(lastrun, indent=4))
-    num = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
-    year = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
-    driver = getChromeDriver()
-    if "portal.njcourts.gov" not in driver.current_url:
-        driver.get(nj_url)
-        if "Enter user ID and password" in driver.page_source:
-            driver.delete_all_cookies()
-            driver.get(disclaimer)
-        time.sleep(3)
-        checkDisclaimer(driver)
-    for y in year:
-        for n in num:
-            if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber']:
-                print(f"Skipping {y}-{n}")
-                continue
-            if f"{y}-{n}" in notrequired:
-                pprint(f"Number {n} Year {y} not required!")
-                continue
-            try:
-                time.sleep(1)
-                checkMax(driver)
-                sptries = 1
-                while "Search By Docket Number" not in driver.page_source:
-                    pprint("Waiting for search page...")
-                    sptries += 1
-                    while "Enter user ID and password" in driver.page_source:
-                        driver.delete_all_cookies()
-                        driver.get(disclaimer)
-                        time.sleep(1)
-                        pprint("Reloading...")
-                        checkDisclaimer(driver)
-                    if sptries % 10 == 0:
-                        driver.get(nj_url)
-                        sptries = 1
-                    sleep(1)
-                fillInfo(driver, n, y)
-                if "Case not found" in driver.page_source:
-                    pprint("Case not found")
-                else:
-                    tries = 0
-                    req = True
-                    while "Case Caption" not in driver.page_source:
-                        pprint("Waiting for result page...")
-                        try:
-                            driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
-                        except:
-                            traceback.print_exc()
-                        tries += 1
-                        if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
-                            try:
-                                driver.refresh()
-                                req = fillInfo(driver, n, y)
-                            except:
-                                pass
-                            tries = 1
-                        elif "You have been logged off as your user session expired" in driver.page_source:
-                            pprint("You have been logged off as your user session expired.")
-                            click(driver, '//a[text()=" here"]')
-                        sleep(1)
-                    if req:
-                        getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
-                        # CategorizeJson()
-                    lastrun['CurrentYear'] = y
-                    lastrun['CurrentNumber'] = n
-                    with open("LastRun.json", "w") as outfile:
-                        json.dump(lastrun, outfile, indent=4)
-            except:
-                traceback.print_exc()
-                pprint(f"Error {y} {n}")
-            driver.get(nj_url)
-
-
-def processBlockLot(data, row):
-    print(f"Working on {row}")
-    if row['county'] in tax_data_url.keys():
-        data["TaxDataHub"] = getTaxDataHub(row['county'], row['district'], row['block'], row['lot'])
-    elif row['county'] == "Ocean":
-        data["StateTax"] = getOcean(row['district'], row['block'], row['lot'])
-    else:
-        data["StateTax"] = getNJactb(row['county'], row['district'], row['block'], row['lot'])
-    data['ArcGis'] = getArcGis(row['county'], row['district'], row['block'], row['lot'])
-
-
-def SearchBlockLot():
-    if os.path.isfile("block-lot.csv"):
-        with open("block-lot.csv", 'r', encoding='utf-8-sig') as infile:
-            # print(infile.read())
-            reader = csv.DictReader(infile)
-            data = {}
-            for row in reader:
-                processBlockLot(data, row)
-    else:
-        print("No block-lot.csv file found")
-
-
-def initialize():
-    global notrequired
-    logo()
-    for directory in [jdir, changeddir, 'StateTax', 'ArcGis', filter_dir, 'CSV_json',
-                      # "notreq", ss
-                      ]:
-        if not os.path.isdir(directory):
-            os.mkdir(directory)
-    if not os.path.isfile(nrfile):
-        with open(nrfile, 'w') as nfile:
-            nfile.write("")
-    if not os.path.isfile(scrapedcsv):
-        with open(scrapedcsv, 'w', newline='', encoding=encoding) as sfile:
-            csv.DictWriter(sfile, fieldnames=fieldnames).writeheader()
-    with open(nrfile) as nfile:
-        notrequired = nfile.read().splitlines()
-
-
-def main():
-    initialize()
-    # CategorizeAllJson()
-    # processAllJson()
-    if not os.path.isfile("LastRun.json"):
-        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
-    else:
-        option = "1"
-    if option == "1":
-        processNjCourts()
-        # uploadCSV(sheet_headers, scrapedcsv)
-    elif option == "2":
-        SearchBlockLot()
-    else:
-        print("Invalid option")
-
-
-def checkMax(driver):
-    while "maximum number of concurrent users." in driver.page_source:
-        pprint("Case Jacket Public Access has reached the maximum number "
-               "of concurrent users. Please try again later.")
-        driver.get(nj_url)
-        time.sleep(1)
-
-
-def fillInfo(driver, n, y):
-    if f"{y}-{n}" in notrequired:
-        pprint(f"Number {n} Year {y} not required!")
-        return False
-    pprint(f"Number {n} Year {y}")
-    sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketNum"]', n)
-    sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketYear"]', y)
-    time.sleep(1)
-    if waitCaptcha(driver):
-        sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketNum"]', n)
-        sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketYear"]', y)
-        time.sleep(1)
-    try:
-        driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
-    except:
-        pprint("Search page captcha manually solved!")
-    time.sleep(2)
-    return True
-
-
-def checkDisclaimer(driver):
-    time.sleep(1)
-    while "Disclaimer" in driver.page_source:
-        time.sleep(1)
-        waitCaptcha(driver)
-        try:
-            driver.find_element(By.XPATH, '//*[@id="disclaimerform:button"]').click()
-        except:
-            pprint("Disclaimer captcha manually solved!")
-        time.sleep(1)
-
-
 def getData(soup, driver, n, y):
     data = {
         "Docket Number": soup.find('span', {"id": "CaseNumberTitlePanel"}).text.split(":")[1].strip(),
@@ -752,7 +581,7 @@ def getData(soup, driver, n, y):
             # print("error", td)
             pass
     tabs_data = {}
-    if not debug:
+    if not test:
         downloadPdf(driver)
     for li in soup.find('ul', {"role": "tablist"}).find_all("li", {"role": "tab"}):
         tab = li.text.split('\u00a0')[0].strip()
@@ -766,26 +595,31 @@ def getData(soup, driver, n, y):
                                   h3_div.find_all('span', {"class": "LabelField"})):
                 tab_data[val.text.strip().replace(":", "")] = label.text.strip()
             if tab == "Properties":
+                block, lots, qual = getBlockLotQual(tab_data["Label"].replace(":", ""))
+                if qual == "":
+                    qual = None
                 county = tab_data["County"]
                 district = tab_data["Municipality"].split("-")[1].strip()
-                label = tab_data["Label"].split()
-                block = label[1]
-                lot = label[-1]
-                if county in tax_data_url.keys():
-                    tab_data["TaxDataHub"] = getTaxDataHub(county, district, block, lot)
-                elif county == "Ocean":
-                    tab_data["StateTax"] = getOcean(district, block, lot)
-                else:
-                    tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                     tab_data["Municipality"].split("-")[0].strip())
-                tab_data['ArcGis'] = getArcGis(county, district, block, lot)
-                tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
-                                                                              district)
-                tab_data[
-                    'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
+                for lot in lots:
+                    if str(lot).endswith(".0"):
+                        lot = int(lot)
+                    if county in tax_data_url.keys():
+                        tab_data["TaxDataHub"] = getTaxDataHub(county, district, block, lot, qual)
+                    elif county == "Ocean":
+                        tab_data["StateTax"] = getOcean(district, block, lot, qual)
+                    else:
+                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
+                    tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
+                    tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
+                    tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
+                    tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
+                                                                                  district)
+                    tab_data[
+                        'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
-                tab_data["Label"] = tab_data["Label"].replace(":", "")
-            tabs_data[tab].append(tab_data)
+                    tab_data["Label"] = tab_data["Label"].replace(":", "")
+                tabs_data[tab].append(tab_data)
     # if tabs_data["Properties"]:
     #     property0 = tabs_data["Properties"][0]
 
@@ -831,16 +665,17 @@ def getData(soup, driver, n, y):
                 # createCsv(data)
         else:
             pprint(f"Not required docket {data['Docket Number']}")
-            with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
-                json.dump(data, jfile, indent=4)
+            # with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
+            #     json.dump(data, jfile, indent=4)
     else:
-        with open(nrfile, 'a') as nfile:
-            nfile.write(f"{y}-{n}\n")
-        notrequired.append(f"{y}-{n}")
-        pprint(f"Not required {data['Docket Number']}")
-        with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
-            json.dump(data, jfile, indent=4)
-    if debug:
+        pass
+        # with open(nrfile, 'a') as nfile:
+        #     nfile.write(f"{y}-{n}\n")
+        # notrequired.append(f"{y}-{n}")
+        # pprint(f"Not required {data['Docket Number']}")
+        # with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
+        #     json.dump(data, jfile, indent=4)
+    if test:
         return data
     downloaded = False
     for i in range(10):
@@ -859,42 +694,135 @@ def getData(soup, driver, n, y):
     return data
 
 
-#
-#
-# def uploadCSV(sht, csv_file):
-#     # global count
-#     # if count % 5 == 0:
-#     pprint("Uploading CSV..")
-#     credentials = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', SCOPES)
-#     client = gspread.authorize(credentials)
-#     spreadsheet = client.open_by_url(sht)
-#     with open(csv_file, 'r') as file_obj:
-#         content = file_obj.read()
-#         client.import_csv(spreadsheet.id, data=content)
-#     pprint(f"{csv_file} uploaded to {sht}")
-#     # count += 1
-#
-#
-# def create():
-#     spreadsheet_details = {
-#         'properties': {
-#             'title': 'NJ-Court'
-#         }
-#     }
-#     credentials = service_account.Credentials.from_service_account_file('client_secret.json', scopes=SCOPES)
-#     spreadsheet_service = build('sheets', 'v4', credentials=credentials)
-#     drive_service = build('drive', 'v3', credentials=credentials)
-#     sht = spreadsheet_service.spreadsheets().create(body=spreadsheet_details, fields='spreadsheetId').execute()
-#     sheetId = sht.get('spreadsheetId')
-#     pprint('Spreadsheet ID: {0}'.format(sheetId))
-#     permission1 = {
-#         'type': 'user',
-#         'role': 'writer',
-#         'emailAddress': '786hassan777@gmail.com'
-#     }
-#     drive_service.permissions().create(fileId=sheetId, body=permission1).execute()
-#     # print(sheetId)
-#
+def processNjCourts(dockets=None):
+    if dockets is not None:
+        num_years = dockets
+    elif not os.path.isfile("LastRun.json"):
+        lastrun['StartNumber'] = int(input("Enter starting number: "))
+        lastrun['EndNumber'] = int(input("Enter ending number: "))
+        lastrun['StartYear'] = int(input("Enter starting year: "))
+        lastrun['EndYear'] = int(input("Enter ending year: "))
+        lastrun['CurrentYear'] = lastrun['StartYear']
+        lastrun['CurrentNumber'] = lastrun['StartNumber']
+        with open("LastRun.json", "w") as outfile:
+            json.dump(lastrun, outfile, indent=4)
+        nums = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
+        years = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
+        num_years = [(num, year) for year in years for num in nums]
+    else:
+        print("Resuming from last run")
+        print(json.dumps(lastrun, indent=4))
+        nums = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
+        years = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
+        num_years = [(num, year) for year in years for num in nums]
+    driver = getChromeDriver()
+    if "portal.njcourts.gov" not in driver.current_url:
+        driver.get(nj_url)
+        if "Enter user ID and password" in driver.page_source:
+            driver.delete_all_cookies()
+            driver.get(disclaimer)
+        time.sleep(3)
+        checkDisclaimer(driver)
+    for n, y in num_years:
+        if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
+            print(f"Skipping {y}-{n}")
+            continue
+        # if f"{y}-{n}" in notrequired:
+        #     pprint(f"Number {n} Year {y} not required!")
+        #     continue
+        try:
+            time.sleep(1)
+            checkMax(driver)
+            sptries = 1
+            while "Search By Docket Number" not in driver.page_source:
+                pprint("Waiting for search page...")
+                sptries += 1
+                while "Enter user ID and password" in driver.page_source:
+                    driver.delete_all_cookies()
+                    driver.get(disclaimer)
+                    time.sleep(1)
+                    pprint("Reloading...")
+                    checkDisclaimer(driver)
+                if sptries % 10 == 0:
+                    driver.get(nj_url)
+                    sptries = 1
+                sleep(1)
+            fillInfo(driver, n, y)
+            if "Case not found" in driver.page_source:
+                pprint("Case not found")
+            else:
+                tries = 0
+                req = True
+                while "Case Caption" not in driver.page_source:
+                    pprint("Waiting for result page...")
+                    try:
+                        driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                    except:
+                        traceback.print_exc()
+                    tries += 1
+                    if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
+                        try:
+                            driver.refresh()
+                            req = fillInfo(driver, n, y)
+                        except:
+                            pass
+                        tries = 1
+                    elif "You have been logged off as your user session expired" in driver.page_source:
+                        pprint("You have been logged off as your user session expired.")
+                        click(driver, '//a[text()=" here"]')
+                    sleep(1)
+                if req:
+                    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+                    # CategorizeJson()
+                lastrun['CurrentYear'] = y
+                lastrun['CurrentNumber'] = n
+                with open("LastRun.json", "w") as outfile:
+                    json.dump(lastrun, outfile, indent=4)
+        except:
+            traceback.print_exc()
+            pprint(f"Error {y} {n}")
+        driver.get(nj_url)
+
+
+def getGoogleAddress(street, county="", district=""):
+    addr = f"{street} {county} {district}".title()
+    for word in ['Twnshp', 'City', 'Boro', 'Twp', 'Borough', 'Township']:
+        addr = addr.replace(word, '')
+    if test:
+        print('Returning default address')
+        return addr
+    url = f"https://www.google.com/search?q={addr}"
+    print(f"Getting Google Address {url}")
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
+         "Chrome/104.0.0.0 Safari/537.36"
+    soup = BeautifulSoup(requests.get(url, headers={'user-agent': ua}).text, 'lxml')
+    try:
+        address = f'{soup.find("div", class_="desktop-title-content").text}, ' \
+                  f'{soup.find("span", class_="desktop-title-subcontent").text}'
+        print(f"Found {address}")
+        return address
+    except:
+        print(f"No address found {url}")
+        # print(soup)
+        return ""
+
+
+def main():
+    processDocketNums()
+    exit()
+    initialize()
+    if not os.path.isfile("LastRun.json"):
+        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
+    else:
+        option = "1"
+    if option == "1":
+        processNjCourts()
+        # uploadCSV(sheet_headers, scrapedcsv)
+    elif option == "2":
+        SearchBlockLot()
+    else:
+        print("Invalid option")
+
 
 def waitCaptcha(driver):
     time.sleep(5)
@@ -914,202 +842,49 @@ def waitCaptcha(driver):
     return fillagain
 
 
-def pprint(msg):
-    m = f'{str(datetime.datetime.now()).split(".")[0]} | {msg}'
-    print(m)
-    # with open("logs.txt", 'a') as logfile:
-    #     logfile.write(m + "\n")
+def checkMax(driver):
+    while "maximum number of concurrent users." in driver.page_source:
+        pprint("Case Jacket Public Access has reached the maximum number "
+               "of concurrent users. Please try again later.")
+        driver.get(nj_url)
+        time.sleep(1)
 
 
-def logo():
-    os.system('color 0a')
-    print(r"""
-           _  __    __  _____                 __     
-          / |/ /__ / / / ___/___  __ __ ____ / /_ ___
-         /    // // / / /__ / _ \/ // // __// __/(_-<
-        /_/|_/ \___/  \___/ \___/\_,_//_/   \__//___/
-===============================================================
-                   NJ Court data scraper by:
-                http://github.com/evilgenius786
-===============================================================
-[+] Automated
-[+] Solves captcha using 2captcha
-[+] JSON output
-[+] CSV output
-[+] Alert on new data
-[+] Error handling
-_______________________________________________________________
-""")
-
-
-def click(driver, xpath, js=False):
-    if js:
-        driver.execute_script("arguments[0].click();", getElement(driver, xpath))
-    else:
-        WebDriverWait(driver, timeout).until(EC.element_to_be_clickable((By.XPATH, xpath))).click()
-
-
-def getText(driver, xpath):
+def fillInfo(driver, n, y):
+    # if f"{y}-{n}" in notrequired:
+    #     pprint(f"Number {n} Year {y} not required!")
+    #     return False
+    pprint(f"Number {n} Year {y}")
+    sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketNum"]', n)
+    sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketYear"]', y)
+    time.sleep(1)
+    if waitCaptcha(driver):
+        sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketNum"]', n)
+        sendkeys(driver, '//*[@id="searchByDocForm:idCivilDocketYear"]', y)
+        time.sleep(1)
     try:
-        return getElement(driver, xpath).text.strip()
+        driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
     except:
-        return ""
+        pprint("Search page captcha manually solved!")
+    time.sleep(2)
+    return True
 
 
-def getElement(driver, xpath):
-    return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, xpath)))
-
-
-def sendkeys(driver, xpath, keys, js=False):
-    if js:
-        driver.execute_script(f"arguments[0].value='{keys}';", getElement(driver, xpath))
-    else:
-        ele = getElement(driver, xpath)
-        ele.clear()
-        ele.send_keys(keys)
-
-
-def getChromeDriver(proxy=None):
-    options = webdriver.ChromeOptions()
-    if debug:
-        # print("Connecting existing Chrome for debugging...")
-        options.debugger_address = "127.0.0.1:9222"
-    else:
-
-        print("PDF Download directory: " + download_dir)
-        if not os.path.exists(download_dir):
-            os.makedirs(download_dir)
-        options.add_experimental_option('prefs', {
-            "download.default_directory": download_dir,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "plugins.always_open_pdf_externally": True
-        })
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("excludeSwitches", ["enable-logging"])
-        options.add_experimental_option('useAutomationExtension', False)
-        options.add_argument("--disable-blink-features")
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument('--user-data-dir=C:/Selenium/ChromeProfile')
-    if not images:
-        # print("Turning off images to save bandwidth")
-        options.add_argument("--blink-settings=imagesEnabled=false")
-    if headless:
-        # print("Going headless")
-        options.add_argument("--headless")
-        options.add_argument("--window-size=1920x1080")
-    if maximize:
-        # print("Maximizing Chrome ")
-        options.add_argument("--start-maximized")
-    if proxy:
-        # print(f"Adding proxy: {proxy}")
-        options.add_argument(f"--proxy-server={proxy}")
-    if incognito:
-        # print("Going incognito")
-        options.add_argument("--incognito")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-
-
-def getFirefoxDriver():
-    options = webdriver.FirefoxOptions()
-    if not images:
-        # print("Turning off images to save bandwidth")
-        options.set_preference("permissions.default.image", 2)
-    if incognito:
-        # print("Enabling incognito mode")
-        options.set_preference("browser.privatebrowsing.autostart", True)
-    if headless:
-        # print("Hiding Firefox")
-        options.add_argument("--headless")
-        options.add_argument("--window-size=1920x1080")
-    return webdriver.Firefox(options)
-
-
-def ValidityTest():
-    for file in os.listdir("./test1"):
-        with open(f"./test1/{file}") as jfile:
-            data = json.load(jfile)
-            # pprint(json.dumps(data, indent=4))
-            if isValid(data):
-                if isValidDocket(data):
-                    print(f"Valid {file}")
-                else:
-                    print(f"Valid but Not required docket {file}")
-            else:
-                print(f"Not required {file}")
-
-
-def getGoogleAddress(street, county="", district=""):
-    addr = f"{street} {county} {district}"
-    if debug:
-        print('Returning default address')
-        return addr
-    url = f"https://www.google.com/search?q={addr}"
-    print(f"Getting Google Address {url}")
-    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
-    soup = BeautifulSoup(requests.get(url, headers={'user-agent': ua}).text, 'lxml')
-    try:
-        address = f'{soup.find("div", class_="desktop-title-content").text}, {soup.find("span", class_="desktop-title-subcontent").text}'
-        print(f"Found {address}")
-        return address
-    except:
-        print(f"No address found {url}")
-        # print(soup)
-        return ""
-
-
-def TranslateCodeToMunicipality(code):
-    with open("Municipality.json") as jfile:
-        data = json.load(jfile)
-        if code in data:
-            return data[code]
-        else:
-            print("Code not found!!")
-            return code
-
-
-# def pdftoText(file):
-#     with open(file, 'rb') as pdfFileObj:
-#         pdfReader = PyPDF2.PdfFileReader(pdfFileObj)
-#         text = ""
-#         for page in range(pdfReader.numPages):
-#             pageObj = pdfReader.getPage(page)
-#             text += (pageObj.extractText())
-#         print(text)
-
-
-def downloadPdf(driver):
-    if os.path.isfile(rf"{download_dir}/CivilCaseJacket.pdf"):
-        print("Deleting old PDF!!")
-        os.remove(rf"{download_dir}/CivilCaseJacket.pdf")
-    # driver = getChromeDriver()
-    table = driver.find_element(By.XPATH, "//table[@id='caseActionTbId2']")
-    for tr in table.find_elements(By.XPATH, './/tr[@role="row"]')[1:]:
-        # print(tr.text)
-        if tr.find_element(By.XPATH, './/td[@class="caseActCol3"]').text.startswith("Complaint"):
-            # print(tr.find_element(By.XPATH, './/td[@class="caseActCol3"]').text)
-            tr.find_element(By.XPATH, './/td[@class="caseActCol2"]/a').click()
-            time.sleep(1)
-            form = driver.find_element(By.XPATH, '//form[@id="documentDetails"]')
-            form.find_element(By.XPATH, './/input[@type="checkbox"]').click()
-            time.sleep(3)
-            driver.find_element(By.XPATH, '//input[@id="documentDetails:savePrintButton"]').click()
-            time.sleep(1)
-
-
-def check():
-    initialize()
-    print("Testing mode...")
-    n = "22"
-    y = "22"
-    driver = getChromeDriver()
-    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+def checkDisclaimer(driver):
+    time.sleep(1)
+    while "Disclaimer" in driver.page_source:
+        time.sleep(1)
+        waitCaptcha(driver)
+        try:
+            driver.find_element(By.XPATH, '//*[@id="disclaimerform:button"]').click()
+        except:
+            pprint("Disclaimer captcha manually solved!")
+        time.sleep(1)
 
 
 def getName(name: str, source: str):
     data = {f"{source}BusinessName": name}
     try:
-        # print(f"Name length ({len(name.split())})")
         if len(name.strip().split()) == 1:
             return data
         name = name.replace("+", "&")
@@ -1212,11 +987,417 @@ def getDistrictCode(county, district):
         return None
 
 
+def getRangeFromString(string):
+    try:
+        if string == "":
+            return []
+        elif "," in string:
+            if "-" in string:
+                rng = []
+                for x in string.split(","):
+                    rng.extend(getRangeFromString(x.strip()))
+                return rng
+            return [float(i) for i in string.split(",")]
+        elif "-" in string:
+            start, end = string.split("-")
+            return list(range(int(start), int(end) + 1))
+        return [float(string)]
+    except:
+        print(f"Error in range ({string})")
+
+
+def downloadPdf(driver):
+    if os.path.isfile(rf"{download_dir}/CivilCaseJacket.pdf"):
+        print("Deleting old PDF!!")
+        os.remove(rf"{download_dir}/CivilCaseJacket.pdf")
+    # driver = getChromeDriver()
+    table = driver.find_element(By.XPATH, "//table[@id='caseActionTbId2']")
+    for tr in table.find_elements(By.XPATH, './/tr[@role="row"]')[1:]:
+        # print(tr.text)
+        if tr.find_element(By.XPATH, './/td[@class="caseActCol3"]').text.startswith("Complaint"):
+            # print(tr.find_element(By.XPATH, './/td[@class="caseActCol3"]').text)
+            tr.find_element(By.XPATH, './/td[@class="caseActCol2"]/a').click()
+            time.sleep(1)
+            form = driver.find_element(By.XPATH, '//form[@id="documentDetails"]')
+            form.find_element(By.XPATH, './/input[@type="checkbox"]').click()
+            time.sleep(3)
+            driver.find_element(By.XPATH, '//input[@id="documentDetails:savePrintButton"]').click()
+            time.sleep(1)
+
+
+def logo():
+    os.system('color 0a')
+    print(r"""
+           _  __    __  _____                 __     
+          / |/ /__ / / / ___/___  __ __ ____ / /_ ___
+         /    // // / / /__ / _ \/ // // __// __/(_-<
+        /_/|_/ \___/  \___/ \___/\_,_//_/   \__//___/
+===============================================================
+                   NJ Court data scraper by:
+                http://github.com/evilgenius786
+===============================================================
+[+] Automated
+[+] Solves captcha using 2captcha
+[+] JSON output
+[+] CSV output
+[+] Alert on new data
+[+] Error handling
+_______________________________________________________________
+""")
+
+
+def initialize():
+    # global notrequired
+    logo()
+    for directory in [jdir, changeddir, 'StateTax', 'ArcGis', filter_dir, 'CSV_json', 'TaxDataHub',
+                      # "notreq", ss
+                      ]:
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
+    # if not os.path.isfile(nrfile):
+    #     with open(nrfile, 'w') as nfile:
+    #         nfile.write("")
+    if not os.path.isfile(scrapedcsv):
+        with open(scrapedcsv, 'w', newline='', encoding=encoding) as sfile:
+            csv.DictWriter(sfile, fieldnames=fieldnames).writeheader()
+    # with open(nrfile) as nfile:
+    #     notrequired = nfile.read().splitlines()
+
+
+def CategorizeJson(file):
+    casetypes = ['Residential', 'Personam', 'Rem', 'Commercial', 'STRICT', 'Condominium', 'Time Share', 'FAIR']
+    with open(f"./{jdir}/{file}") as jfile:
+        data = json.load(jfile)
+    found = False
+    for casetype in casetypes:
+        if casetype.lower() in data['Case Type'].lower():
+            found = True
+            print(f"'{casetype}' found in ({data['Case Type']}) ({data['Docket Number']})")
+            if not os.path.isdir(f"./{filter_dir}/{casetype}"):
+                os.mkdir(f"./{filter_dir}/{casetype}")
+            with open(f"./{filter_dir}/{casetype}/{file}", 'w') as jfile:
+                json.dump(data, jfile, indent=4)
+            if casetype == 'Personam' or casetype == 'Rem':
+                if not os.path.isdir(f"./{filter_dir}/{tax_dir}"):
+                    os.mkdir(f"./{filter_dir}/{tax_dir}")
+                with open(f"./{filter_dir}/{tax_dir}/{file}", 'w') as jfile:
+                    json.dump(data, jfile, indent=4)
+    if not found:
+        print(f"Nothing found ({data['Case Type']}) ({data['Docket Number']})")
+        if not os.path.isdir(f"./{filter_dir}/{other_dir}"):
+            os.mkdir(f"./{filter_dir}/{other_dir}")
+        with open(f"./{filter_dir}/{other_dir}/{file}", 'w') as nfile:
+            json.dump(data, nfile, indent=4)
+
+
+def getBlockLotQual(label):
+    label = label
+    block = label.split()[1]
+    lot = label.split("Lot")[1].strip().replace("and", ",").replace("&", ",").replace(" ,", ',').replace(',,', ',')
+    qual = ""
+    if len(lot.split()) == 2 and "," not in lot and "-" not in lot:
+        qual = lot.split()[-1]
+        print(f"Got qualifier {qual}")
+        lot = lot.split()[0]
+    return block, getRangeFromString(lot), qual
+
+
+def processBlockLot(data, row):
+    print(f"Working on {row}")
+    if row['county'] in tax_data_url.keys():
+        data["TaxDataHub"] = getTaxDataHub(row['county'], row['district'], row['block'], row['lot'])
+    elif row['county'] == "Ocean":
+        data["StateTax"] = getOcean(row['district'], row['block'], row['lot'])
+    else:
+        data["StateTax"] = getNJactb(row['county'], row['district'], row['block'], row['lot'])
+    data['ArcGis'] = getArcGis(row['county'], row['district'], row['block'], row['lot'])
+
+
+def processDocketNums():
+    initialize()
+    # driver = getChromeDriver()
+    # getData(BeautifulSoup(driver.page_source, "html.parser"), driver, "010235", "22")
+    # convert('NJ-Courts.csv')
+    # exit()
+    if os.path.isfile('Dockets.txt'):
+        num_year = []
+        with open('Dockets.txt', 'r') as f:
+            for line in f:
+                doc = line[4:].strip().split("-")
+                num_year.append((doc[0], doc[1]))
+        num_year = list(set(num_year))
+        processNjCourts(num_year)
+
+
+def getApn(url):
+    apn = url.split("&l02=")[1].replace("_________M", "").replace('____', '-0000-')
+    return f"{apn[2:4]} {apn[4:]}"
+
+
+def processAllJson():
+    for f in os.listdir(jdir):
+        if not f.endswith(".json"):
+            continue
+        processJson(f)
+    convert(scrapedcsv)
+
+
+def convert(filename):
+    pd.read_csv(filename, encoding=encoding).to_excel(filename.replace("csv", "xlsx"), index=False)
+
+
+def CategorizeAllJson():
+    for f in os.listdir(jdir):
+        if not f.endswith(".json"):
+            continue
+        CategorizeJson(f)
+
+
+def SearchBlockLot():
+    if os.path.isfile("block-lot.csv"):
+        with open("block-lot.csv", 'r', encoding='utf-8-sig') as infile:
+            # print(infile.read())
+            reader = csv.DictReader(infile)
+            data = {}
+            for row in reader:
+                processBlockLot(data, row)
+    else:
+        print("No block-lot.csv file found")
+
+
+def getChromeDriver(proxy=None):
+    options = webdriver.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    if debug:
+        # print("Connecting existing Chrome for debugging...")
+        options.debugger_address = "127.0.0.1:9222"
+    else:
+
+        print("PDF Download directory: " + download_dir)
+        if not os.path.exists(download_dir):
+            os.makedirs(download_dir)
+        options.add_experimental_option('prefs', {
+            "download.default_directory": download_dir,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "plugins.always_open_pdf_externally": True
+        })
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("excludeSwitches", ["enable-logging"])
+        options.add_experimental_option('useAutomationExtension', False)
+        options.add_argument("--disable-blink-features")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument('--user-data-dir=C:/Selenium/ChromeProfile')
+    if not images:
+        # print("Turning off images to save bandwidth")
+        options.add_argument("--blink-settings=imagesEnabled=false")
+    if headless:
+        # print("Going headless")
+        options.add_argument("--headless")
+        options.add_argument("--window-size=1920x1080")
+    if maximize:
+        # print("Maximizing Chrome ")
+        options.add_argument("--start-maximized")
+    if proxy:
+        # print(f"Adding proxy: {proxy}")
+        options.add_argument(f"--proxy-server={proxy}")
+    if incognito:
+        # print("Going incognito")
+        options.add_argument("--incognito")
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+
+def getFirefoxDriver():
+    options = webdriver.FirefoxOptions()
+    if not images:
+        # print("Turning off images to save bandwidth")
+        options.set_preference("permissions.default.image", 2)
+    if incognito:
+        # print("Enabling incognito mode")
+        options.set_preference("browser.privatebrowsing.autostart", True)
+    if headless:
+        # print("Hiding Firefox")
+        options.add_argument("--headless")
+        options.add_argument("--window-size=1920x1080")
+    return webdriver.Firefox(options)
+
+
+def isValidDocket(data):
+    return True
+
+
+def isValid(data):
+    return True
+
+
+def flatten_json(y):
+    out = {}
+
+    def flatten(x, name=''):
+        if type(x) is dict:
+            for a in x:
+                flatten(x[a], name + a + '_')
+        elif type(x) is list:
+            i = 0
+            for a in x:
+                flatten(a, name + str(i) + '_')
+                i += 1
+        else:
+            out[name[:-1]] = x
+
+    flatten(y)
+    return out
+
+
+def append(data):
+    with open(scrapedcsv, 'a', newline='', encoding=encoding) as sfile:
+        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(data)
+
+
+def click(driver, xpath, js=False):
+    if js:
+        driver.execute_script("arguments[0].click();", getElement(driver, xpath))
+    else:
+        WebDriverWait(driver, timeout).until(EC.element_to_be_clickable((By.XPATH, xpath))).click()
+
+
+def getText(driver, xpath):
+    try:
+        return getElement(driver, xpath).text.strip()
+    except:
+        return ""
+
+
+def getElement(driver, xpath):
+    return WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, xpath)))
+
+
+def sendkeys(driver, xpath, keys, js=False):
+    if js:
+        driver.execute_script(f"arguments[0].value='{keys}';", getElement(driver, xpath))
+    else:
+        ele = getElement(driver, xpath)
+        ele.clear()
+        ele.send_keys(keys)
+
+
+def pprint(msg):
+    m = f'{str(datetime.datetime.now()).split(".")[0]} | {msg}'
+    print(m)
+
+
 if __name__ == "__main__":
     main()
+    # processAllJson()
+    # print(getGoogleAddress('201 Lake Ave Camden Clementon Boro'))
     # print(getNJactb('Union', "CLARK", "1", "1"))
     # getTaxDataHub("Middlesex", "Caldwell", "1", "1")
     # initialize()
     # getName('Sylvia Nora Jennings S', 'Court')
     # processAllJson()
     # main()
+
+# import gspread
+# from google.oauth2 import service_account
+# from googleapiclient.discovery import build
+# from oauth2client.service_account import ServiceAccountCredentials
+# import openpyxl
+
+# def convert(filename):
+#     wb = openpyxl.Workbook()
+#     ws = wb.active
+#     with open(filename, encoding=encoding) as f:
+#         reader = csv.reader(f, delimiter=',')
+#         for row in reader:
+#             ws.append(row)
+#     wb.save(filename.replace("csv", "xlsx"))
+# def uploadCSV(sht, csv_file):
+#     # global count
+#     # if count % 5 == 0:
+#     pprint("Uploading CSV..")
+#     credentials = ServiceAccountCredentials.from_json_keyfile_name('client_secret.json', SCOPES)
+#     client = gspread.authorize(credentials)
+#     spreadsheet = client.open_by_url(sht)
+#     with open(csv_file, 'r') as file_obj:
+#         content = file_obj.read()
+#         client.import_csv(spreadsheet.id, data=content)
+#     pprint(f"{csv_file} uploaded to {sht}")
+#     # count += 1
+# def create():
+#     spreadsheet_details = {
+#         'properties': {
+#             'title': 'NJ-Court'
+#         }
+#     }
+#     credentials = service_account.Credentials.from_service_account_file('client_secret.json', scopes=SCOPES)
+#     spreadsheet_service = build('sheets', 'v4', credentials=credentials)
+#     drive_service = build('drive', 'v3', credentials=credentials)
+#     sht = spreadsheet_service.spreadsheets().create(body=spreadsheet_details, fields='spreadsheetId').execute()
+#     sheetId = sht.get('spreadsheetId')
+#     pprint('Spreadsheet ID: {0}'.format(sheetId))
+#     permission1 = {
+#         'type': 'user',
+#         'role': 'writer',
+#         'emailAddress': '786hassan777@gmail.com'
+#     }
+#     drive_service.permissions().create(fileId=sheetId, body=permission1).execute()
+#     # print(sheetId)
+# def ValidityTest():
+#     for file in os.listdir("./test1"):
+#         with open(f"./test1/{file}") as jfile:
+#             data = json.load(jfile)
+#             # pprint(json.dumps(data, indent=4))
+#             if isValid(data):
+#                 if isValidDocket(data):
+#                     print(f"Valid {file}")
+#                 else:
+#                     print(f"Valid but Not required docket {file}")
+#             else:
+#                 print(f"Not required {file}")
+# def check():
+#     initialize()
+#     print("Testing mode...")
+#     n = "22"
+#     y = "22"
+#     driver = getChromeDriver()
+#     getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+
+# valid = {
+#     "Case Status": "Active",
+#     "Case Type": [
+#         "In Rem Tax Foreclosure",
+#         "In Personam Tax Foreclosure"
+#     ],
+#     "Docket Text": [
+#         "fixing amount/time/place",
+#         "Motion for final judgment",
+#         "MISCELLANEOUS MOTION",
+#         "Abandoned Property"
+#     ],
+#     "Venue": ["Bergen", "Essex", "Hudson", "Middlesex", "Monmouth", "Morris", "Passaic", "Somerset", "Union"],
+# }
+# def processHeaders():
+#     with open('headers.txt') as hfile:
+#         headers = hfile.readlines()
+#     data = {}
+#     for line in headers:
+#         line = line.strip().split("\t")
+#         if len(line) == 2 and line[0] != "" and line[1] != "":
+#             data[line[1]] = line[0]
+#     print(json.dumps(data, indent=4))
+#     with open('headers.json', 'w') as outfile:
+#         json.dump(data, outfile, indent=4)
+# def isValidDocket(data):
+#     for txt in valid["Docket Text"]:
+#         if txt.lower() in str(data).lower():
+#             return True
+#     return False
+# def isValid(data):
+#     if data["Case Status"].lower() != valid['Case Status'].lower():
+#         pprint(f"Case Status not active ({data['Case Status']})")
+#         return False
+#     for ct in valid['Case Type']:
+#         if ct.lower() in data['Case Type'].lower():
+#             return True
+#     pprint(f"Not required ({data['Docket Number']})")
+#     return False
