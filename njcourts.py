@@ -34,7 +34,7 @@ other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
 debug = False
-test = False
+test = True
 headless = False
 images = True
 maximize = False
@@ -68,7 +68,7 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
-
+                updated_data.update(breakNormalizeAddress(updated_data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
                 if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
                     updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
                                                                                       "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -120,39 +120,41 @@ def processJson(f):
                         traceback.print_exc()
                     updated_data['NjParcelsPropertyNormalizedAddress'] = getGoogleAddress(
                         nj_parcels_prop_addr)
-                if "NjPropertyRecords" in data and data["NjPropertyRecords"]:
-                    details = data["NjPropertyRecords"]
-                    updated_data['NjPropertyRecordsBusinessName'] = details['Owner(s)']
-                    updated_data.update(getName(updated_data['NjPropertyRecordsBusinessName'], "NjPropertyRecords"))
-                    nj_prop_rec_mail_addr = f"{details['Mailing Address']}, {details['City State Zip']}"
-                    updated_data['NjPropertyRecordsMailingAddress'] = nj_prop_rec_mail_addr
-                    try:
-                        updated_data['NjPropertyRecordsMailingAddressStreet'] = details['Mailing Address']
-                        city_state_zip = details['City State Zip'].split()
-                        updated_data['NjPropertyRecordsMailingAddressCity'] = getCity(city_state_zip[0])
-                        updated_data['NjPropertyRecordsMailingAddressState'] = city_state_zip[-2]
-                        updated_data['NjPropertyRecordsMailingAddressZip'] = city_state_zip[-1]
-                    except:
-                        print(data['NjPropertyRecords'])
-                        traceback.print_exc()
-                    updated_data['NjPropertyRecordsMailingNormalizedAddress'] = getGoogleAddress(nj_prop_rec_mail_addr)
-                    dist = data['NjPropertyRecords']['District']
-                    dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
-                    if "County" not in data['NjPropertyRecords']:
-                        data['NjPropertyRecords']['County'] = ""
-                    csz = details['PropertyCityStateZip']
-                    nj_prop_rec_prop_addr = f"{details['PropertyStreet']}, {csz}"
-                    updated_data['NjPropertyRecordsPropertyAddress'] = nj_prop_rec_prop_addr
-                    try:
-                        updated_data['NjPropertyRecordsPropertyAddressStreet'] = details['PropertyStreet']
-                        updated_data['NjPropertyRecordsPropertyAddressCity'] = getCity(dist)
-                        updated_data['NjPropertyRecordsPropertyAddressCounty'] = data['County']
-                        updated_data['NjPropertyRecordsPropertyAddressState'] = "NJ"
-                        updated_data['NjPropertyRecordsPropertyAddressZip'] = ""
-                    except:
-                        traceback.print_exc()
-                    updated_data['NjPropertyRecordsPropertyNormalizedAddress'] = getGoogleAddress(
-                        nj_prop_rec_prop_addr)
+                # if "NjPropertyRecords" in data and data["NjPropertyRecords"]:
+                #     details = data["NjPropertyRecords"]
+                #     updated_data['NjPropertyRecordsBusinessName'] = details['Owner(s)']
+                #     updated_data.update(getName(updated_data['NjPropertyRecordsBusinessName'], "NjPropertyRecords"))
+                #     nj_prop_rec_mail_addr = f"{details['Mailing Address']}, {details['City State Zip']}"
+                #     updated_data['NjPropertyRecordsMailingAddress'] = nj_prop_rec_mail_addr
+                #     try:
+                #         updated_data['NjPropertyRecordsMailingAddressStreet'] = details['Mailing Address']
+                #         city_state_zip = details['City State Zip'].split()
+                #         updated_data['NjPropertyRecordsMailingAddressCity'] = getCity(city_state_zip[0])
+                #         updated_data['NjPropertyRecordsMailingAddressState'] = city_state_zip[-2]
+                #         updated_data['NjPropertyRecordsMailingAddressZip'] = city_state_zip[-1]
+                #     except:
+                #         print(data['NjPropertyRecords'])
+                #         traceback.print_exc()
+                #     updated_data['NjPropertyRecordsMailingNormalizedAddress'] = getGoogleAddress(nj_prop_rec_mail_addr)
+                #     dist = data['NjPropertyRecords']['District']
+                #     dist = " ".join(dist.split()[1:]) if dist.split()[0].isnumeric() else dist
+                #     if "County" not in data['NjPropertyRecords']:
+                #         data['NjPropertyRecords']['County'] = ""
+                #     csz = details['PropertyCityStateZip']
+                #     nj_prop_rec_prop_addr = f"{details['PropertyStreet']}, {csz}"
+                #     updated_data['NjPropertyRecordsPropertyAddress'] = nj_prop_rec_prop_addr
+                #     try:
+                #         updated_data['NjPropertyRecordsPropertyAddressStreet'] = details['PropertyStreet']
+                #         updated_data['NjPropertyRecordsPropertyAddressCity'] = getCity(dist)
+                #         updated_data['NjPropertyRecordsPropertyAddressCounty'] = data['County']
+                #         updated_data['NjPropertyRecordsPropertyAddressState'] = "NJ"
+                #         updated_data['NjPropertyRecordsPropertyAddressZip'] = ""
+                #     except:
+                #         traceback.print_exc()
+                #     updated_data['NjPropertyRecordsPropertyNormalizedAddress'] = getGoogleAddress(
+                #         nj_prop_rec_prop_addr)
+                #     updated_data.update(
+                #         breakNormalizeAddress(updated_data["NjPropertyRecordsPropertyNormalizedAddress"], "Sift2", 'Prop'))
                 if "TaxDataHub" in data and data["TaxDataHub"] and "Details" in data["TaxDataHub"]:
                     details = data["TaxDataHub"]["Details"]
                     if "OwnerName" in details:
@@ -250,6 +252,7 @@ def processJson(f):
                         print(data['ArcGis'])
                         traceback.print_exc()
                     updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
+                    updated_data.update(breakNormalizeAddress(updated_data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
                     arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
                     updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
                     try:
@@ -261,14 +264,9 @@ def processJson(f):
                     except:
                         traceback.print_exc()
                     updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
-                if "CourtNormalizedPropertyAddress" in data:
-                    updated_data.update(breakNormalizeAddress(data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
-                if "NjPropertyRecordsPropertyNormalizedAddress" in data:
-                    updated_data.update(
-                        breakNormalizeAddress(data["NjPropertyRecordsPropertyNormalizedAddress"], "Sift2", 'Prop'))
-                if "ArcGisMailingNormalizedAddress" in data:
-                    updated_data.update(
-                        breakNormalizeAddress(data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
+
+
+
             except:
                 print(f"Error processing {file} {property_}")
                 traceback.print_exc()
@@ -401,65 +399,65 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
         traceback.print_exc()
         return None
 
-
-def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
-    try:
-        driver.get('https://njpropertyrecords.com')
-        time.sleep(1)
-        print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
-        district_num = getDistrictCode(county, district)
-        if district_num is None:
-            print(f"District code not found for {county}/{district}")
-            return
-        term = f"{district_num}_{block}_{lot}"
-        if qual is not None:
-            term += f"_{qual}"
-        url = f"https://njpropertyrecords.com/property/{term}"
-        print(url)
-        driver.get(url)
-        time.sleep(1)
-        for i in range(60):
-            if "Checking if the site connection is secure" in driver.page_source:
-                time.sleep(1)
-                print('Checking if the site connection is secure')
-            else:
-                break
-        if "Checking if the site connection is secure" in driver.page_source:
-            print("Error in fetching NJ Property Records")
-            return
-        if "Property Page Limit Reached" in driver.page_source:
-            print("NJ Property Records Property Page Limit Reached, Please turn on VPN or change IP!!")
-            return
-        soup = BeautifulSoup(driver.page_source, 'lxml')
-        h1 = soup.find('h1')
-        data = {
-            "County": county,
-            "District": district,
-            "URL": url,
-            'PropertyStreet': h1.text.strip(),
-            "PropertyCityStateZip": h1.parent.find('div').text.strip()
-        }
-        for i in ['overview', 'public-records']:
-            try:
-                for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
-                    if ov.find('div') is None:
-                        continue
-                    for line in ov.find('div').find_all("div"):
-                        if "Login" in line.text:
-                            continue
-                        l = line.find_all('div')
-                        if len(l) > 1:
-                            data[l[0].text] = l[1].text
-            except:
-                traceback.print_exc()
-        data['County'] = county
-        # print(json.dumps(data, indent=4))
-        with open(f"./NjPropertyRecords/{county}-{district}-{block}-{lot}-NJPR.json", "w") as jfile:
-            json.dump(data, jfile, indent=4)
-        return data
-    except:
-        traceback.print_exc()
-        return None
+#
+# def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
+#     try:
+#         driver.get('https://njpropertyrecords.com')
+#         time.sleep(1)
+#         print(f"Fetching NJPropertyRecords for {county}/{district}/{block}/{lot}")
+#         district_num = getDistrictCode(county, district)
+#         if district_num is None:
+#             print(f"District code not found for {county}/{district}")
+#             return
+#         term = f"{district_num}_{block}_{lot}"
+#         if qual is not None:
+#             term += f"_{qual}"
+#         url = f"https://njpropertyrecords.com/property/{term}"
+#         print(url)
+#         driver.get(url)
+#         time.sleep(1)
+#         for i in range(60):
+#             if "Checking if the site connection is secure" in driver.page_source:
+#                 time.sleep(1)
+#                 print('Checking if the site connection is secure')
+#             else:
+#                 break
+#         if "Checking if the site connection is secure" in driver.page_source:
+#             print("Error in fetching NJ Property Records")
+#             return
+#         if "Property Page Limit Reached" in driver.page_source:
+#             print("NJ Property Records Property Page Limit Reached, Please turn on VPN or change IP!!")
+#             return
+#         soup = BeautifulSoup(driver.page_source, 'lxml')
+#         h1 = soup.find('h1')
+#         data = {
+#             "County": county,
+#             "District": district,
+#             "URL": url,
+#             'PropertyStreet': h1.text.strip(),
+#             "PropertyCityStateZip": h1.parent.find('div').text.strip()
+#         }
+#         for i in ['overview', 'public-records']:
+#             try:
+#                 for ov in soup.find('div', {'id': i}).find_all('div')[3].find_all('div'):
+#                     if ov.find('div') is None:
+#                         continue
+#                     for line in ov.find('div').find_all("div"):
+#                         if "Login" in line.text:
+#                             continue
+#                         l = line.find_all('div')
+#                         if len(l) > 1:
+#                             data[l[0].text] = l[1].text
+#             except:
+#                 traceback.print_exc()
+#         data['County'] = county
+#         # print(json.dumps(data, indent=4))
+#         with open(f"./NjPropertyRecords/{county}-{district}-{block}-{lot}-NJPR.json", "w") as jfile:
+#             json.dump(data, jfile, indent=4)
+#         return data
+#     except:
+#         traceback.print_exc()
+#         return None
 
 
 def getNjParcels(county, district, block, lot, qual=None):
@@ -668,9 +666,10 @@ def getData(soup, driver, n, y):
                                                          tab_data["Municipality"].split("-")[0].strip(), qual)
                     tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
                     tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
-                    tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
+                    # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
                     tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
                                                                                   district)
+
                     tab_data[
                         'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
@@ -876,8 +875,9 @@ def breakNormalizeAddress(addr, source, type_):
 
 def main():
     initialize()
-    # processAllJson()
-    # exit()
+    if test:
+        processAllJson()
+        exit()
     if not os.path.isfile("LastRun.json"):
         option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
     else:
@@ -997,7 +997,7 @@ def getName(name: str, source: str):
                 data[f'{source}LastName'] = name.split()[0]
         elif "vs state of" in name.lower():
             data[f'{source}NameType'] = "GOVT OWNED"
-        elif " llc " in name.lower() or " inc " in name.lower() or " asso" in name.lower() or "corp" in name.lower() or "company" in name.lower():
+        elif "llc " in name.lower() or " inc " in name.lower() or " asso" in name.lower() or "corp" in name.lower() or "company" in name.lower():
             data[f'{source}NameType'] = "Company"
         elif "-" in name and len(name.split()) == 2:
             data[f"{source}FirstName"] = name.split()[0]
@@ -1124,8 +1124,8 @@ def initialize():
     if debug:
         print("Make sure Selenium Chrome is running...")
     for directory in [jdir, changeddir, filter_dir,
-                      'StateTax', 'ArcGis', 'CSV_json', 'TaxDataHub', 'NjPropertyRecords', 'NjParcels'
-                      # "notreq", ss
+                      'StateTax', 'ArcGis', 'CSV_json', 'TaxDataHub', 'NjParcels'
+                      # "notreq", ss,  'NjPropertyRecords'
                       ]:
         if not os.path.isdir(directory):
             os.mkdir(directory)
