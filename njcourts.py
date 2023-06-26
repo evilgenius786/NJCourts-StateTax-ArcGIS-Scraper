@@ -1,6 +1,7 @@
 import csv
 import datetime
 import os.path
+import re
 import time
 import traceback
 from time import sleep
@@ -33,8 +34,9 @@ filter_dir = "All NJ-COURT Filtered Forc"
 other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
+# debug = os.path.isfile("debug")
 debug = False
-test = True
+test = False
 headless = False
 images = True
 maximize = False
@@ -51,8 +53,45 @@ tax_data_url = {
     "Essex": "6229fbf0ce4aef911f9de7bc",
     "Middlesex": "623085dd284c51d4d32ff9fe",
 }
-with open('fieldnames.txt') as ffile:
-    fieldnames = ffile.read().splitlines()
+if os.path.isfile("fieldnames.txt"):
+    with open('fieldnames.txt') as ffile:
+        fieldnames = ffile.read().splitlines()
+else:
+    fieldnames = ["Docket Number", "Case Caption", "Court", "Venue", "Case Initiation Date", "Case Type", "Case Status",
+                  "Disposition Date", "Case Disposition", "CourtBusinessName", "CourtNameType", "CourtFirstName",
+                  "CourtMiddleName", "CourtLastName", "CourtNameExtra", "StateTaxBusinessName", "StateTaxNameType",
+                  "StateTaxFirstName", "StateTaxMiddleName", "StateTaxLastName", "StateTaxNameExtra",
+                  "TaxDataHubBusinessName", "TaxDataHubNameType", "TaxDataHubFirstName", "TaxDataHubMiddleName",
+                  "TaxDataHubLastName", "TaxDataHubNameExtra", "NjParcelsBusinessName", "NjParcelsNameType",
+                  "NjParcelsFirstName", "NjParcelsMiddleName", "NjParcelsLastName", "NjParcelsNameExtra",
+                  "CourtPropertyAddress", "CourtNormalizedPropertyAddress", "Sift1PropStreet", "Sift1PropCity",
+                  "Sift1PropState", "Sift1PropZip", "TaxDataHubPropertyAddress", "TaxDataHubPropertyAddressStreet",
+                  "TaxDataHubPropertyAddressCity", "TaxDataHubPropertyAddressState", "TaxDataHubPropertyAddressZip",
+                  "TaxDataHubPropertyAddressCounty", "TaxDataHubPropertyNormalizedAddress", "StateTaxPropertyAddress",
+                  "StateTaxPropertyAddressStreet", "StateTaxPropertyAddressCity", "StateTaxPropertyAddressState",
+                  "StateTaxPropertyAddressZip", "StateTaxPropertyAddressCounty", "StateTaxPropertyNormalizedAddress",
+                  "ArcGisPropertyAddress", "ArcGisPropertyAddressStreet", "ArcGisPropertyAddressCity",
+                  "ArcGisPropertyAddressState", "ArcGisPropertyAddressZip", "ArcGisPropertyAddressCounty",
+                  "ArcGisPropertyNormalizedAddress", "NjParcelsPropertyAddress", "NjParcelsPropertyAddressStreet",
+                  "NjParcelsPropertyAddressCity", "NjParcelsPropertyAddressState", "NjParcelsPropertyAddressZip",
+                  "NjParcelsPropertyAddressCounty", "NjParcelsPropertyNormalizedAddress", "Sift2PropStreet",
+                  "Sift2PropCity", "Sift2PropState", "Sift2PropZip", "StateTax_Owner", "StateTaxMailingAddress",
+                  "StateTaxMailingAddressStreet", "StateTaxMailingAddressCity", "StateTaxMailingAddressState",
+                  "StateTaxMailingAddressZip", "StateTaxMailingNormalizedAddress", "ArcGisMailingAddress",
+                  "ArcGisMailingAddressStreet", "ArcGisMailingAddressCity", "ArcGisMailingAddressState",
+                  "ArcGisMailingAddressZip", "ArcGisMailingNormalizedAddress", "Sift1MailingStreet", "Sift1MailingCity",
+                  "Sift1MailingState", "Sift1MailingZip", "TaxDataHubMailingAddress", "TaxDataHubMailingAddressStreet",
+                  "TaxDataHubMailingAddressCity", "TaxDataHubMailingAddressState", "TaxDataHubMailingAddressZip",
+                  "TaxDataHubMailingNormalizedAddress", "NjParcelsMailingAddress", "NjParcelsMailingAddressStreet",
+                  "NjParcelsMailingAddressCity", "NjParcelsMailingAddressState", "NjParcelsMailingAddressZip",
+                  "NjParcelsMailingNormalizedAddress", "Label", "Property Type", "StateTax_URL", "StateTax_APN",
+                  "StateTax_Block", "StateTax_Square Ft", "StateTax_Lot", "StateTax_Year Built", "StateTax_Land Desc",
+                  "StateTax_Bldg Desc", "StateTax_Updated", "StateTax_Zone", "ArcGis_PAMS_PIN", "ArcGis_PCL_MUN",
+                  "ArcGis_PCLBLOCK", "ArcGis_PCLLOT", "ArcGis_PROP_CLASS", "ArcGis_LAND_VAL", "ArcGis_IMPRVT_VAL",
+                  "ArcGis_NET_VALUE", "ArcGis_LAST_YR_TX", "ArcGis_DEED_DATE", "ArcGis_SALE_PRICE", "ArcGis_PCL_PBDATE",
+                  "ArcGis_PCL_GUID", "Comments"]
+    with open('fieldnames.txt', 'w') as ffile:
+        ffile.write("\n".join(fieldnames))
 
 
 def processJson(f):
@@ -68,7 +107,8 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
-                updated_data.update(breakNormalizeAddress(updated_data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
+                updated_data.update(
+                    breakNormalizeAddress(updated_data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
                 if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
                     updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
                                                                                       "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -232,41 +272,42 @@ def processJson(f):
                         traceback.print_exc()
                     updated_data['StateTaxPropertyNormalizedAddress'] = getGoogleAddress(state_tax_prop_addr)
                 if "ArcGis" in data and data["ArcGis"]:
+                    # print("Processing ARCGIS")
                     if "CITY_STATE" not in data['ArcGis']:
                         updated_data['ArcGisMailingAddress'] = "Unknown"
-                        continue
-                    if "UNKNOWN" in data['ArcGis']['CITY_STATE'] or "UNKNOWN" in data['ArcGis']['ST_ADDRESS']:
+                        # continue
+                    elif "UNKNOWN" in data['ArcGis']['CITY_STATE'] or "UNKNOWN" in data['ArcGis']['ST_ADDRESS']:
                         updated_data['ArcGisMailingAddress'] = "Unknown"
-                        continue
-                    if "," not in data['ArcGis']['CITY_STATE']:
-                        data['ArcGis']['CITY_STATE'] = data['ArcGis']['CITY_STATE'].replace(" ", ", ")
-                    arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
-                    updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
-                    try:
-                        updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'].strip()
-                        updated_data['ArcGisMailingAddressCity'] = getCity(
-                            data['ArcGis']['CITY_STATE'].split(",")[0].strip())
-                        updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[1].strip()
-                        updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
-                    except:
-                        print(data['ArcGis'])
-                        traceback.print_exc()
-                    updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
-                    updated_data.update(breakNormalizeAddress(updated_data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
-                    arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
-                    updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
-                    try:
-                        updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
-                        updated_data['ArcGisPropertyAddressCity'] = getCity(data['ArcGis']['MUN_NAME'].title())
-                        updated_data['ArcGisPropertyAddressState'] = "NJ"
-                        updated_data['ArcGisPropertyAddressCounty'] = data['County']
-                        updated_data['ArcGisPropertyAddressZip'] = ""
-                    except:
-                        traceback.print_exc()
-                    updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
-
-
-
+                        # continue
+                    else:
+                        if "," not in data['ArcGis']['CITY_STATE']:
+                            data['ArcGis']['CITY_STATE'] = data['ArcGis']['CITY_STATE'].replace(" ", ", ")
+                        arcgis_mail_addr = f"{data['ArcGis']['ST_ADDRESS']}, {data['ArcGis']['CITY_STATE']}"
+                        updated_data['ArcGisMailingAddress'] = arcgis_mail_addr
+                        try:
+                            updated_data['ArcGisMailingAddressStreet'] = data['ArcGis']['ST_ADDRESS'].strip()
+                            updated_data['ArcGisMailingAddressCity'] = getCity(
+                                data['ArcGis']['CITY_STATE'].split(",")[0].strip())
+                            updated_data['ArcGisMailingAddressState'] = data['ArcGis']['CITY_STATE'].split(",")[
+                                1].strip()
+                            updated_data['ArcGisMailingAddressZip'] = data['ArcGis']['ZIP_CODE']
+                        except:
+                            print(data['ArcGis'])
+                            traceback.print_exc()
+                        updated_data['ArcGisMailingNormalizedAddress'] = getGoogleAddress(arcgis_mail_addr)
+                        updated_data.update(
+                            breakNormalizeAddress(updated_data["ArcGisMailingNormalizedAddress"], "Sift1", 'Mailing'))
+                        arcgis_prop_addr = f"{data['ArcGis']['PROP_LOC']}, {data['ArcGis']['MUN_NAME']}, {data['ArcGis']['COUNTY']}"
+                        updated_data['ArcGisPropertyAddress'] = arcgis_prop_addr
+                        try:
+                            updated_data['ArcGisPropertyAddressStreet'] = data['ArcGis']['PROP_LOC']
+                            updated_data['ArcGisPropertyAddressCity'] = getCity(data['ArcGis']['MUN_NAME'].title())
+                            updated_data['ArcGisPropertyAddressState'] = "NJ"
+                            updated_data['ArcGisPropertyAddressCounty'] = data['County']
+                            updated_data['ArcGisPropertyAddressZip'] = ""
+                        except:
+                            traceback.print_exc()
+                        updated_data['ArcGisPropertyNormalizedAddress'] = getGoogleAddress(arcgis_prop_addr)
             except:
                 print(f"Error processing {file} {property_}")
                 traceback.print_exc()
@@ -275,6 +316,7 @@ def processJson(f):
             updated_data['Comments'] = updated_data.copy()
             if test:
                 print(updated_data.keys())
+            print(f"Writing {newfile}...")
             with open(newfile, 'w') as jfile:
                 json.dump(updated_data, jfile, indent=4)
             append(updated_data)
@@ -347,8 +389,7 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
             'lot': lot,
             'qual': qual if qual is not None else '',
         }
-        response = requests.post('http://tax1.co.monmouth.nj.us/cgi-bin/inf.cgi', headers=headers, data=req_data,
-                                 verify=False)
+        response = requests.post('https://tax1.co.monmouth.nj.us/cgi-bin/inf.cgi', headers=headers, data=req_data)
         soup = BeautifulSoup(response.text, 'lxml')
         if len(soup.find_all("a")) > 0:
             print(f"Found {len(soup.find_all('a'))} record(s) for {block}/{lot}/{district}.")
@@ -398,6 +439,7 @@ def getNJactb(county, district, block, lot, district_number=None, qual=None):
         print(f"Error {county}/{district}/{block}/{lot}")
         traceback.print_exc()
         return None
+
 
 #
 # def getNjPropertyRecords(driver, county, district, block, lot, qual=None):
@@ -470,7 +512,13 @@ def getNjParcels(county, district, block, lot, qual=None):
     if qual is not None:
         term += f"/{qual}"
     url = f"https://njparcels.com/property/{term}"
-    soup = BeautifulSoup(requests.get(url).content, 'lxml')
+    print(url)
+    try:
+        soup = BeautifulSoup(requests.get(url).content, 'lxml')
+    except:
+        url += "/CONDO"
+        print(url)
+        soup = BeautifulSoup(requests.get(url).content, 'lxml')
     data = {"County": county, "District": district, "URL": url}
     try:
         data["cadastre"] = soup.find("p", {"class": "cadastre"}).text
@@ -573,8 +621,7 @@ def getArcGis(county, district, block, lot, qual=None):
     try:
         attrib = {"County": county, "District": district}
         print(f"Fetching ARCGIS records for {county}/{district}/{block}/{lot}")
-        with open("arcgis.json") as f:
-            districts = json.load(f)
+        districts = getArcGIS()
         try:
             for dist in districts[county.upper()]:
                 if dist.startswith(district.upper().split()[0]):
@@ -593,6 +640,7 @@ def getArcGis(county, district, block, lot, qual=None):
             ('block', block),
             ('queryType', 'Exact Match'),
             ('lot', lot),
+            ("qual", qual)
         )
         url = 'https://mapsdep.nj.gov/arcgis/rest/services/Tasks/BlockLotFinder/GPServer/BlockLotFinder/execute'
         res = requests.get(url, params=params).json()
@@ -659,11 +707,17 @@ def getData(soup, driver, n, y):
                     elif county == "Ocean":
                         tab_data["StateTax"] = getOcean(district, block, lot, qual)
                     else:
-                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
+                        try:
+                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
+                        except:
+                            pass
                     if county in ['Middlesex', 'Essex']:
-                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
+                        try:
+                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
+                        except:
+                            pass
                     tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
                     tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
                     # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
@@ -836,6 +890,8 @@ def processNjCourts(dockets=None):
         except:
             traceback.print_exc()
             pprint(f"Error {y} {n}")
+            with open("error.txt", "a") as f:
+                f.write(f"{y},{n}\n")
         driver.get(nj_url)
 
 
@@ -852,25 +908,36 @@ def getGoogleAddress(street, county="", district=""):
          "Chrome/104.0.0.0 Safari/537.36"
     soup = BeautifulSoup(requests.get(url, headers={'user-agent': ua}).text, 'lxml')
     try:
-        address = f'{soup.find("div", class_="desktop-title-content").text}, ' \
-                  f'{soup.find("span", class_="desktop-title-subcontent").text}'
+        div = soup.find("div", {"class": "vk_sh vk_bk"})
+        address = f'{div.find("div").text}, ' \
+                  f'{div.find("span").text}'
         print(f"Found {address}")
         return address
     except:
         print(f"No address found {url}")
+        with open("google-address.html", "w", encoding='utf8') as outfile:
+            outfile.write(soup.prettify())
         # print(soup)
         return ""
 
 
 def breakNormalizeAddress(addr, source, type_):
-    address = addr.split(',')
-    data = {
-        f'{source}{type_}Street': address[0].strip(),
-        f'{source}{type_}City': address[1].strip(),
-        f'{source}{type_}State': address[2].split()[0].strip(),
-        f'{source}{type_}Zip': address[2].split()[1].strip()
-    }
-    return data
+    if addr == "":
+        print(f"Empty address!! {source},{type_}")
+        return {}
+    try:
+        print(f"Processing address: {addr}")
+        address = addr.split(',')
+        data = {
+            f'{source}{type_}Street': address[0].strip(),
+            f'{source}{type_}City': address[1].strip(),
+            f'{source}{type_}State': address[2].split()[0].strip(),
+            f'{source}{type_}Zip': address[2].split()[1].strip()
+        }
+        return data
+    except:
+        traceback.print_exc()
+        return {}
 
 
 def main():
@@ -997,7 +1064,7 @@ def getName(name: str, source: str):
                 data[f'{source}LastName'] = name.split()[0]
         elif "vs state of" in name.lower():
             data[f'{source}NameType'] = "GOVT OWNED"
-        elif "llc " in name.lower() or " inc " in name.lower() or " asso" in name.lower() or "corp" in name.lower() or "company" in name.lower():
+        elif " llc" in name.lower() or " inc" in name.lower() or " asso" in name.lower() or "corp" in name.lower() or "company" in name.lower():
             data[f'{source}NameType'] = "Company"
         elif "-" in name and len(name.split()) == 2:
             data[f"{source}FirstName"] = name.split()[0]
@@ -1045,8 +1112,7 @@ def getName(name: str, source: str):
 
 
 def getDistrictCode(county, district):
-    with open("District-Codes.json", "r") as jfile:
-        county_codes = json.load(jfile)
+    county_codes = getDistrictCodes()
     try:
         for key1 in county_codes.keys():
             if key1.upper() in county.upper() or county.upper() in key1.upper():
@@ -1057,25 +1123,6 @@ def getDistrictCode(county, district):
     except:
         print(f"Invalid District {county}/{district}")
         return None
-
-
-def getRangeFromString(string):
-    try:
-        if string == "":
-            return []
-        elif "," in string:
-            if "-" in string:
-                rng = []
-                for x in string.split(","):
-                    rng.extend(getRangeFromString(x.strip()))
-                return rng
-            return [float(i) for i in string.split(",")]
-        elif "-" in string:
-            start, end = string.split("-")
-            return list(range(int(start), int(end) + 1))
-        return [float(string)]
-    except:
-        print(f"Error in range ({string})")
 
 
 def downloadPdf(driver):
@@ -1165,18 +1212,6 @@ def CategorizeJson(file):
             json.dump(data, nfile, indent=4)
 
 
-def getBlockLotQual(label):
-    label = label
-    block = label.split()[1]
-    lot = label.split("Lot")[1].strip().replace("and", ",").replace("&", ",").replace(" ,", ',').replace(',,', ',')
-    qual = ""
-    if len(lot.split()) == 2 and "," not in lot and "-" not in lot:
-        qual = lot.split()[-1]
-        print(f"Got qualifier {qual}")
-        lot = lot.split()[0]
-    return block, getRangeFromString(lot), qual
-
-
 def processBlockLot(data, row):
     print(f"Working on {row}")
     if row['county'] in tax_data_url.keys():
@@ -1210,7 +1245,7 @@ def getApn(url):
 
 
 def processAllJson():
-    for f in os.listdir(jdir):
+    for f in os.listdir(jdir)[1:2]:
         if not f.endswith(".json"):
             continue
         processJson(f)
@@ -1361,5 +1396,1320 @@ def pprint(msg):
     print(m)
 
 
+def processNames():
+    with open('names.txt', 'r') as ifile:
+        names = ifile.read().splitlines()
+    for name in names:
+        getName(name, "")
+
+
+def checkNJATCB():
+    import requests
+
+    headers = {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'DNT': '1',
+        'Origin': 'https://tax1.co.monmouth.nj.us',
+        'Pragma': 'no-cache',
+        'Referer': 'https://tax1.co.monmouth.nj.us/cgi-bin/prc6.cgi?menu=index&ms_user=monm&passwd=data&district=1301&mode=11',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'Upgrade-Insecure-Requests': '1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36',
+        'sec-ch-ua': '"Google Chrome";v="111", "Not(A:Brand";v="8", "Chromium";v="111"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+    }
+
+    data = {
+        'ms_user': 'monm',
+        'passwd': 'data',
+        'srch_type': '1',
+        'select_cc': '1301',
+        'district': '1301',
+        'adv': '1',
+        'out_type': '1',
+        'ms_ln': '50',
+        'p_loc': '',
+        'owner': '',
+        'block': '1',
+        'lot': '1',
+        'qual': ''
+    }
+
+    response = requests.post('https://tax1.co.monmouth.nj.us/cgi-bin/inf.cgi', headers=headers, data=data)
+    print(response.text)
+
+
+def getArcGIS():
+    return {
+        "ATLANTIC": [
+            "ABSECON CITY",
+            "ATLANTIC CITY",
+            "BRIGANTINE CITY",
+            "BUENA BOROUGH",
+            "BUENA VISTA TOWNSHIP",
+            "CORBIN CITY",
+            "EGG HARBOR CITY",
+            "EGG HARBOR TOWNSHIP",
+            "ESTELL MANOR CITY",
+            "FOLSOM BOROUGH",
+            "GALLOWAY TOWNSHIP",
+            "HAMILTON TOWNSHIP",
+            "HAMMONTON TOWN",
+            "LINWOOD CITY",
+            "LONGPORT BOROUGH",
+            "MARGATE CITY",
+            "MULLICA TOWNSHIP",
+            "NORTHFIELD CITY",
+            "PLEASANTVILLE CITY",
+            "PORT REPUBLIC CITY",
+            "SOMERS POINT CITY",
+            "VENTNOR CITY",
+            "WEYMOUTH TOWNSHIP"
+        ],
+        "BERGEN": [
+            "ALLENDALE BOROUGH",
+            "ALPINE BOROUGH",
+            "BERGENFIELD BOROUGH",
+            "BOGOTA BOROUGH",
+            "CARLSTADT BOROUGH",
+            "CLIFFSIDE PARK BOROUGH",
+            "CLOSTER BOROUGH",
+            "CRESSKILL BOROUGH",
+            "DEMAREST BOROUGH",
+            "DUMONT BOROUGH",
+            "EAST RUTHERFORD BOROUGH",
+            "EDGEWATER BOROUGH",
+            "ELMWOOD PARK BOROUGH",
+            "EMERSON BOROUGH",
+            "ENGLEWOOD CITY",
+            "ENGLEWOOD CLIFFS BOROUGH",
+            "FAIR LAWN BOROUGH",
+            "FAIRVIEW BOROUGH",
+            "FORT LEE BOROUGH",
+            "FRANKLIN LAKES BOROUGH",
+            "GARFIELD CITY",
+            "GLEN ROCK BOROUGH",
+            "HACKENSACK CITY",
+            "HARRINGTON PARK BOROUGH",
+            "HASBROUCK HEIGHTS BOROUGH",
+            "HAWORTH BOROUGH",
+            "HILLSDALE BOROUGH",
+            "HO-HO-KUS BOROUGH",
+            "LEONIA BOROUGH",
+            "LITTLE FERRY BOROUGH",
+            "LODI BOROUGH",
+            "LYNDHURST TOWNSHIP",
+            "MAHWAH TOWNSHIP",
+            "MAYWOOD BOROUGH",
+            "MIDLAND PARK BOROUGH",
+            "MONTVALE BOROUGH",
+            "MOONACHIE BOROUGH",
+            "NEW MILFORD BOROUGH",
+            "NORTH ARLINGTON BOROUGH",
+            "NORTHVALE BOROUGH",
+            "NORWOOD BOROUGH",
+            "OAKLAND BOROUGH",
+            "OLD TAPPAN BOROUGH",
+            "ORADELL BOROUGH",
+            "PALISADES PARK BOROUGH",
+            "PARAMUS BOROUGH",
+            "PARK RIDGE BOROUGH",
+            "RAMSEY BOROUGH",
+            "RIDGEFIELD BOROUGH",
+            "RIDGEFIELD PARK VILLAGE",
+            "RIDGEWOOD VILLAGE",
+            "RIVER EDGE BOROUGH",
+            "RIVER VALE TOWNSHIP",
+            "ROCHELLE PARK TOWNSHIP",
+            "ROCKLEIGH BOROUGH",
+            "RUTHERFORD BOROUGH",
+            "SADDLE BROOK TOWNSHIP",
+            "SADDLE RIVER BOROUGH",
+            "SOUTH HACKENSACK TOWNSHIP",
+            "TEANECK TOWNSHIP",
+            "TENAFLY BOROUGH",
+            "TETERBORO BOROUGH",
+            "UPPER SADDLE RIVER BOROUGH",
+            "WALDWICK BOROUGH",
+            "WALLINGTON BOROUGH",
+            "WASHINGTON TOWNSHIP",
+            "WESTWOOD BOROUGH",
+            "WOOD-RIDGE BOROUGH",
+            "WOODCLIFF LAKE BOROUGH",
+            "WYCKOFF TOWNSHIP"
+        ],
+        "BURLINGTON": [
+            "BASS RIVER TOWNSHIP",
+            "BEVERLY CITY",
+            "BORDENTOWN CITY",
+            "BORDENTOWN TOWNSHIP",
+            "BURLINGTON CITY",
+            "BURLINGTON TOWNSHIP",
+            "CHESTERFIELD TOWNSHIP",
+            "CINNAMINSON TOWNSHIP",
+            "DELANCO TOWNSHIP",
+            "DELRAN TOWNSHIP",
+            "EASTAMPTON TOWNSHIP",
+            "EDGEWATER PARK TOWNSHIP",
+            "EVESHAM TOWNSHIP",
+            "FIELDSBORO BOROUGH",
+            "FLORENCE TOWNSHIP",
+            "HAINESPORT TOWNSHIP",
+            "LUMBERTON TOWNSHIP",
+            "MANSFIELD TOWNSHIP",
+            "MAPLE SHADE TOWNSHIP",
+            "MEDFORD LAKES BOROUGH",
+            "MEDFORD TOWNSHIP",
+            "MOORESTOWN TOWNSHIP",
+            "MOUNT HOLLY TOWNSHIP",
+            "MOUNT LAUREL TOWNSHIP",
+            "NEW HANOVER TOWNSHIP",
+            "NORTH HANOVER TOWNSHIP",
+            "PALMYRA BOROUGH",
+            "PEMBERTON BOROUGH",
+            "PEMBERTON TOWNSHIP",
+            "RIVERSIDE TOWNSHIP",
+            "RIVERTON BOROUGH",
+            "SHAMONG TOWNSHIP",
+            "SOUTHAMPTON TOWNSHIP",
+            "SPRINGFIELD TOWNSHIP",
+            "TABERNACLE TOWNSHIP",
+            "WASHINGTON TOWNSHIP",
+            "WESTAMPTON TOWNSHIP",
+            "WILLINGBORO TOWNSHIP",
+            "WOODLAND TOWNSHIP",
+            "WRIGHTSTOWN BOROUGH"
+        ],
+        "CAMDEN": [
+            "AUDUBON BOROUGH",
+            "AUDUBON PARK BOROUGH",
+            "BARRINGTON BOROUGH",
+            "BELLMAWR BOROUGH",
+            "BERLIN BOROUGH",
+            "BERLIN TOWNSHIP",
+            "BROOKLAWN BOROUGH",
+            "CAMDEN CITY",
+            "CHERRY HILL TOWNSHIP",
+            "CHESILHURST BOROUGH",
+            "CLEMENTON BOROUGH",
+            "COLLINGSWOOD BOROUGH",
+            "GIBBSBORO BOROUGH",
+            "GLOUCESTER CITY",
+            "GLOUCESTER TOWNSHIP",
+            "HADDON HEIGHTS BOROUGH",
+            "HADDON TOWNSHIP",
+            "HADDONFIELD BOROUGH",
+            "HI-NELLA BOROUGH",
+            "LAUREL SPRINGS BOROUGH",
+            "LAWNSIDE BOROUGH",
+            "LINDENWOLD BOROUGH",
+            "MAGNOLIA BOROUGH",
+            "MERCHANTVILLE BOROUGH",
+            "MOUNT EPHRAIM BOROUGH",
+            "OAKLYN BOROUGH",
+            "PENNSAUKEN TOWNSHIP",
+            "PINE HILL BOROUGH",
+            "PINE VALLEY BOROUGH",
+            "RUNNEMEDE BOROUGH",
+            "SOMERDALE BOROUGH",
+            "STRATFORD BOROUGH",
+            "TAVISTOCK BOROUGH",
+            "VOORHEES TOWNSHIP",
+            "WATERFORD TOWNSHIP",
+            "WINSLOW TOWNSHIP",
+            "WOODLYNNE BOROUGH"
+        ],
+        "CAPE MAY": [
+            "AVALON BOROUGH",
+            "CAPE MAY CITY",
+            "CAPE MAY POINT BOROUGH",
+            "DENNIS TOWNSHIP",
+            "LOWER TOWNSHIP",
+            "MIDDLE TOWNSHIP",
+            "NORTH WILDWOOD CITY",
+            "OCEAN CITY",
+            "SEA ISLE CITY",
+            "STONE HARBOR BOROUGH",
+            "UPPER TOWNSHIP",
+            "WEST CAPE MAY BOROUGH",
+            "WEST WILDWOOD BOROUGH",
+            "WILDWOOD CITY",
+            "WILDWOOD CREST BOROUGH",
+            "WOODBINE BOROUGH"
+        ],
+        "CUMBERLAND": [
+            "BRIDGETON CITY",
+            "COMMERCIAL TOWNSHIP",
+            "DEERFIELD TOWNSHIP",
+            "DOWNE TOWNSHIP",
+            "FAIRFIELD TOWNSHIP",
+            "GREENWICH TOWNSHIP",
+            "HOPEWELL TOWNSHIP",
+            "LAWRENCE TOWNSHIP",
+            "MAURICE RIVER TOWNSHIP",
+            "MILLVILLE CITY",
+            "SHILOH BOROUGH",
+            "STOW CREEK TOWNSHIP",
+            "UPPER DEERFIELD TOWNSHIP",
+            "VINELAND CITY"
+        ],
+        "ESSEX": [
+            "BELLEVILLE TOWNSHIP",
+            "BLOOMFIELD TOWNSHIP",
+            "CALDWELL BOROUGH",
+            "CEDAR GROVE TOWNSHIP",
+            "CITY OF ORANGE TOWNSHIP",
+            "EAST ORANGE CITY",
+            "ESSEX FELLS BOROUGH",
+            "FAIRFIELD TOWNSHIP",
+            "GLEN RIDGE BOROUGH",
+            "IRVINGTON TOWNSHIP",
+            "LIVINGSTON TOWNSHIP",
+            "MAPLEWOOD TOWNSHIP",
+            "MILLBURN TOWNSHIP",
+            "MONTCLAIR TOWNSHIP",
+            "NEWARK CITY",
+            "NORTH CALDWELL BOROUGH",
+            "NUTLEY TOWNSHIP",
+            "ROSELAND BOROUGH",
+            "SOUTH ORANGE VILLAGE TOWNSHIP",
+            "VERONA TOWNSHIP",
+            "WEST CALDWELL TOWNSHIP",
+            "WEST ORANGE TOWNSHIP"
+        ],
+        "GLOUCESTER": [
+            "CLAYTON BOROUGH",
+            "DEPTFORD TOWNSHIP",
+            "EAST GREENWICH TOWNSHIP",
+            "ELK TOWNSHIP",
+            "FRANKLIN TOWNSHIP",
+            "GLASSBORO BOROUGH",
+            "GREENWICH TOWNSHIP",
+            "HARRISON TOWNSHIP",
+            "LOGAN TOWNSHIP",
+            "MANTUA TOWNSHIP",
+            "MONROE TOWNSHIP",
+            "NATIONAL PARK BOROUGH",
+            "NEWFIELD BOROUGH",
+            "PAULSBORO BOROUGH",
+            "PITMAN BOROUGH",
+            "SOUTH HARRISON TOWNSHIP",
+            "SWEDESBORO BOROUGH",
+            "WASHINGTON TOWNSHIP",
+            "WENONAH BOROUGH",
+            "WEST DEPTFORD TOWNSHIP",
+            "WESTVILLE BOROUGH",
+            "WOODBURY CITY",
+            "WOODBURY HEIGHTS BOROUGH",
+            "WOOLWICH TOWNSHIP"
+        ],
+        "HUDSON": [
+            "BAYONNE CITY",
+            "EAST NEWARK BOROUGH",
+            "GUTTENBERG TOWN",
+            "HARRISON TOWN",
+            "HOBOKEN CITY",
+            "JERSEY CITY",
+            "KEARNY TOWN",
+            "NORTH BERGEN TOWNSHIP",
+            "SECAUCUS TOWN",
+            "UNION CITY",
+            "WEEHAWKEN TOWNSHIP",
+            "WEST NEW YORK TOWN"
+        ],
+        "HUNTERDON": [
+            "ALEXANDRIA TOWNSHIP",
+            "BETHLEHEM TOWNSHIP",
+            "BLOOMSBURY BOROUGH",
+            "CALIFON BOROUGH",
+            "CLINTON TOWN",
+            "CLINTON TOWNSHIP",
+            "DELAWARE TOWNSHIP",
+            "EAST AMWELL TOWNSHIP",
+            "FLEMINGTON BOROUGH",
+            "FRANKLIN TOWNSHIP",
+            "FRENCHTOWN BOROUGH",
+            "GLEN GARDNER BOROUGH",
+            "HAMPTON BOROUGH",
+            "HIGH BRIDGE BOROUGH",
+            "HOLLAND TOWNSHIP",
+            "KINGWOOD TOWNSHIP",
+            "LAMBERTVILLE CITY",
+            "LEBANON BOROUGH",
+            "LEBANON TOWNSHIP",
+            "MILFORD BOROUGH",
+            "RARITAN TOWNSHIP",
+            "READINGTON TOWNSHIP",
+            "STOCKTON BOROUGH",
+            "TEWKSBURY TOWNSHIP",
+            "UNION TOWNSHIP",
+            "WEST AMWELL TOWNSHIP"
+        ],
+        "MERCER": [
+            "EAST WINDSOR TOWNSHIP",
+            "EWING TOWNSHIP",
+            "HAMILTON TOWNSHIP",
+            "HIGHTSTOWN BOROUGH",
+            "HOPEWELL BOROUGH",
+            "HOPEWELL TOWNSHIP",
+            "LAWRENCE TOWNSHIP",
+            "PENNINGTON BOROUGH",
+            "PRINCETON",
+            "ROBBINSVILLE TOWNSHIP",
+            "TRENTON CITY",
+            "WEST WINDSOR TOWNSHIP"
+        ],
+        "MIDDLESEX": [
+            "CARTERET BOROUGH",
+            "CRANBURY TOWNSHIP",
+            "DUNELLEN BOROUGH",
+            "EAST BRUNSWICK TOWNSHIP",
+            "EDISON TOWNSHIP",
+            "HELMETTA BOROUGH",
+            "HIGHLAND PARK BOROUGH",
+            "JAMESBURG BOROUGH",
+            "METUCHEN BOROUGH",
+            "MIDDLESEX BOROUGH",
+            "MILLTOWN BOROUGH",
+            "MONROE TOWNSHIP",
+            "NEW BRUNSWICK CITY",
+            "NORTH BRUNSWICK TOWNSHIP",
+            "OLD BRIDGE TOWNSHIP",
+            "PERTH AMBOY CITY",
+            "PISCATAWAY TOWNSHIP",
+            "PLAINSBORO TOWNSHIP",
+            "SAYREVILLE BOROUGH",
+            "SOUTH AMBOY CITY",
+            "SOUTH BRUNSWICK TOWNSHIP",
+            "SOUTH PLAINFIELD BOROUGH",
+            "SOUTH RIVER BOROUGH",
+            "SPOTSWOOD BOROUGH",
+            "WOODBRIDGE TOWNSHIP"
+        ],
+        "MONMOUTH": [
+            "ABERDEEN TOWNSHIP",
+            "ALLENHURST BOROUGH",
+            "ALLENTOWN BOROUGH",
+            "ASBURY PARK CITY",
+            "ATLANTIC HIGHLANDS BOROUGH",
+            "AVON-BY-THE-SEA BOROUGH",
+            "BELMAR BOROUGH",
+            "BRADLEY BEACH BOROUGH",
+            "BRIELLE BOROUGH",
+            "COLTS NECK TOWNSHIP",
+            "DEAL BOROUGH",
+            "EATONTOWN BOROUGH",
+            "ENGLISHTOWN BOROUGH",
+            "FAIR HAVEN BOROUGH",
+            "FARMINGDALE BOROUGH",
+            "FREEHOLD BOROUGH",
+            "FREEHOLD TOWNSHIP",
+            "HAZLET TOWNSHIP",
+            "HIGHLANDS BOROUGH",
+            "HOLMDEL TOWNSHIP",
+            "HOWELL TOWNSHIP",
+            "INTERLAKEN BOROUGH",
+            "KEANSBURG BOROUGH",
+            "KEYPORT BOROUGH",
+            "LAKE COMO BOROUGH",
+            "LITTLE SILVER BOROUGH",
+            "LOCH ARBOUR VILLAGE",
+            "LONG BRANCH CITY",
+            "MANALAPAN TOWNSHIP",
+            "MANASQUAN BOROUGH",
+            "MARLBORO TOWNSHIP",
+            "MATAWAN BOROUGH",
+            "MIDDLETOWN TOWNSHIP",
+            "MILLSTONE TOWNSHIP",
+            "MONMOUTH BEACH BOROUGH",
+            "NEPTUNE CITY BOROUGH",
+            "NEPTUNE TOWNSHIP",
+            "OCEAN TOWNSHIP",
+            "OCEANPORT BOROUGH",
+            "RED BANK BOROUGH",
+            "ROOSEVELT BOROUGH",
+            "RUMSON BOROUGH",
+            "SEA BRIGHT BOROUGH",
+            "SEA GIRT BOROUGH",
+            "SHREWSBURY BOROUGH",
+            "SHREWSBURY TOWNSHIP",
+            "SPRING LAKE BOROUGH",
+            "SPRING LAKE HEIGHTS BOROUGH",
+            "TINTON FALLS BOROUGH",
+            "UNION BEACH BOROUGH",
+            "UPPER FREEHOLD TOWNSHIP",
+            "WALL TOWNSHIP",
+            "WEST LONG BRANCH BOROUGH"
+        ],
+        "MORRIS": [
+            "BOONTON TOWN",
+            "BOONTON TOWNSHIP",
+            "BUTLER BOROUGH",
+            "CHATHAM BOROUGH",
+            "CHATHAM TOWNSHIP",
+            "CHESTER BOROUGH",
+            "CHESTER TOWNSHIP",
+            "DENVILLE TOWNSHIP",
+            "DOVER TOWN",
+            "EAST HANOVER TOWNSHIP",
+            "FLORHAM PARK BOROUGH",
+            "HANOVER TOWNSHIP",
+            "HARDING TOWNSHIP",
+            "JEFFERSON TOWNSHIP",
+            "KINNELON BOROUGH",
+            "LINCOLN PARK BOROUGH",
+            "LONG HILL TOWNSHIP",
+            "MADISON BOROUGH",
+            "MENDHAM BOROUGH",
+            "MENDHAM TOWNSHIP",
+            "MINE HILL TOWNSHIP",
+            "MONTVILLE TOWNSHIP",
+            "MORRIS PLAINS BOROUGH",
+            "MORRIS TOWNSHIP",
+            "MORRISTOWN TOWN",
+            "MOUNT ARLINGTON BOROUGH",
+            "MOUNT OLIVE TOWNSHIP",
+            "MOUNTAIN LAKES BOROUGH",
+            "NETCONG BOROUGH",
+            "PARSIPPANY-TROY HILLS TOWNSHIP",
+            "PEQUANNOCK TOWNSHIP",
+            "RANDOLPH TOWNSHIP",
+            "RIVERDALE BOROUGH",
+            "ROCKAWAY BOROUGH",
+            "ROCKAWAY TOWNSHIP",
+            "ROXBURY TOWNSHIP",
+            "VICTORY GARDENS BOROUGH",
+            "WASHINGTON TOWNSHIP",
+            "WHARTON BOROUGH"
+        ],
+        "OCEAN": [
+            "BARNEGAT LIGHT BOROUGH",
+            "BARNEGAT TOWNSHIP",
+            "BAY HEAD BOROUGH",
+            "BEACH HAVEN BOROUGH",
+            "BEACHWOOD BOROUGH",
+            "BERKELEY TOWNSHIP",
+            "BRICK TOWNSHIP",
+            "EAGLESWOOD TOWNSHIP",
+            "HARVEY CEDARS BOROUGH",
+            "ISLAND HEIGHTS BOROUGH",
+            "JACKSON TOWNSHIP",
+            "LACEY TOWNSHIP",
+            "LAKEHURST BOROUGH",
+            "LAKEWOOD TOWNSHIP",
+            "LAVALLETTE BOROUGH",
+            "LITTLE EGG HARBOR TOWNSHIP",
+            "LONG BEACH TOWNSHIP",
+            "MANCHESTER TOWNSHIP",
+            "MANTOLOKING BOROUGH",
+            "OCEAN GATE BOROUGH",
+            "OCEAN TOWNSHIP",
+            "PINE BEACH BOROUGH",
+            "PLUMSTED TOWNSHIP",
+            "POINT PLEASANT BEACH BOROUGH",
+            "POINT PLEASANT BOROUGH",
+            "SEASIDE HEIGHTS BOROUGH",
+            "SEASIDE PARK BOROUGH",
+            "SHIP BOTTOM BOROUGH",
+            "SOUTH TOMS RIVER BOROUGH",
+            "STAFFORD TOWNSHIP",
+            "SURF CITY BOROUGH",
+            "TOMS RIVER TOWNSHIP",
+            "TUCKERTON BOROUGH"
+        ],
+        "PASSAIC": [
+            "BLOOMINGDALE BOROUGH",
+            "CLIFTON CITY",
+            "HALEDON BOROUGH",
+            "HAWTHORNE BOROUGH",
+            "LITTLE FALLS TOWNSHIP",
+            "NORTH HALEDON BOROUGH",
+            "PASSAIC CITY",
+            "PATERSON CITY",
+            "POMPTON LAKES BOROUGH",
+            "PROSPECT PARK BOROUGH",
+            "RINGWOOD BOROUGH",
+            "TOTOWA BOROUGH",
+            "WANAQUE BOROUGH",
+            "WAYNE TOWNSHIP",
+            "WEST MILFORD TOWNSHIP",
+            "WOODLAND PARK BOROUGH"
+        ],
+        "SALEM": [
+            "ALLOWAY TOWNSHIP",
+            "CARNEYS POINT TOWNSHIP",
+            "ELMER BOROUGH",
+            "ELSINBORO TOWNSHIP",
+            "LOWER ALLOWAYS CREEK TOWNSHIP",
+            "MANNINGTON TOWNSHIP",
+            "OLDMANS TOWNSHIP",
+            "PENNS GROVE BOROUGH",
+            "PENNSVILLE TOWNSHIP",
+            "PILESGROVE TOWNSHIP",
+            "PITTSGROVE TOWNSHIP",
+            "QUINTON TOWNSHIP",
+            "SALEM CITY",
+            "UPPER PITTSGROVE TOWNSHIP",
+            "WOODSTOWN BOROUGH"
+        ],
+        "SOMERSET": [
+            "BEDMINSTER TOWNSHIP",
+            "BERNARDS TOWNSHIP",
+            "BERNARDSVILLE BOROUGH",
+            "BOUND BROOK BOROUGH",
+            "BRANCHBURG TOWNSHIP",
+            "BRIDGEWATER TOWNSHIP",
+            "FAR HILLS BOROUGH",
+            "FRANKLIN TOWNSHIP",
+            "GREEN BROOK TOWNSHIP",
+            "HILLSBOROUGH TOWNSHIP",
+            "MANVILLE BOROUGH",
+            "MILLSTONE BOROUGH",
+            "MONTGOMERY TOWNSHIP",
+            "NORTH PLAINFIELD BOROUGH",
+            "PEAPACK-GLADSTONE BOROUGH",
+            "RARITAN BOROUGH",
+            "ROCKY HILL BOROUGH",
+            "SOMERVILLE BOROUGH",
+            "SOUTH BOUND BROOK BOROUGH",
+            "WARREN TOWNSHIP",
+            "WATCHUNG BOROUGH"
+        ],
+        "SUSSEX": [
+            "ANDOVER BOROUGH",
+            "ANDOVER TOWNSHIP",
+            "BRANCHVILLE BOROUGH",
+            "BYRAM TOWNSHIP",
+            "FRANKFORD TOWNSHIP",
+            "FRANKLIN BOROUGH",
+            "FREDON TOWNSHIP",
+            "GREEN TOWNSHIP",
+            "HAMBURG BOROUGH",
+            "HAMPTON TOWNSHIP",
+            "HARDYSTON TOWNSHIP",
+            "HOPATCONG BOROUGH",
+            "LAFAYETTE TOWNSHIP",
+            "MONTAGUE TOWNSHIP",
+            "NEWTON TOWN",
+            "OGDENSBURG BOROUGH",
+            "SANDYSTON TOWNSHIP",
+            "SPARTA TOWNSHIP",
+            "STANHOPE BOROUGH",
+            "STILLWATER TOWNSHIP",
+            "SUSSEX BOROUGH",
+            "VERNON TOWNSHIP",
+            "WALPACK TOWNSHIP",
+            "WANTAGE TOWNSHIP"
+        ],
+        "UNION": [
+            "BERKELEY HEIGHTS TOWNSHIP",
+            "CLARK TOWNSHIP",
+            "CRANFORD TOWNSHIP",
+            "ELIZABETH CITY",
+            "FANWOOD BOROUGH",
+            "GARWOOD BOROUGH",
+            "HILLSIDE TOWNSHIP",
+            "KENILWORTH BOROUGH",
+            "LINDEN CITY",
+            "MOUNTAINSIDE BOROUGH",
+            "NEW PROVIDENCE BOROUGH",
+            "PLAINFIELD CITY",
+            "RAHWAY CITY",
+            "ROSELLE BOROUGH",
+            "ROSELLE PARK BOROUGH",
+            "SCOTCH PLAINS TOWNSHIP",
+            "SPRINGFIELD TOWNSHIP",
+            "SUMMIT CITY",
+            "UNION TOWNSHIP",
+            "WESTFIELD TOWN",
+            "WINFIELD TOWNSHIP"
+        ],
+        "WARREN": [
+            "ALLAMUCHY TOWNSHIP",
+            "ALPHA BOROUGH",
+            "BELVIDERE TOWN",
+            "BLAIRSTOWN TOWNSHIP",
+            "FRANKLIN TOWNSHIP",
+            "FRELINGHUYSEN TOWNSHIP",
+            "GREENWICH TOWNSHIP",
+            "HACKETTSTOWN TOWN",
+            "HARDWICK TOWNSHIP",
+            "HARMONY TOWNSHIP",
+            "HOPE TOWNSHIP",
+            "INDEPENDENCE TOWNSHIP",
+            "KNOWLTON TOWNSHIP",
+            "LIBERTY TOWNSHIP",
+            "LOPATCONG TOWNSHIP",
+            "MANSFIELD TOWNSHIP",
+            "OXFORD TOWNSHIP",
+            "PHILLIPSBURG TOWN",
+            "POHATCONG TOWNSHIP",
+            "WASHINGTON BOROUGH",
+            "WASHINGTON TOWNSHIP",
+            "WHITE TOWNSHIP"
+        ]
+    }
+
+
+def getDistrictCodes():
+    return {
+        "Atlantic": {
+            "Absecon": "0101",
+            "Atlantic City": "0102",
+            "Brigantine": "0103",
+            "Buena": "0104",
+            "Buena Vista": "0105",
+            "Corbin City": "0106",
+            "Egg Harbor City": "0107",
+            "Egg Harbor": "0108",
+            "Estell Manor": "0109",
+            "Folsom": "0110",
+            "Galloway": "0111",
+            "Hamilton": "0112",
+            "Hammonton": "0113",
+            "Linwood": "0114",
+            "Longport": "0115",
+            "Margate City": "0116",
+            "Mullica": "0117",
+            "Northfield": "0118",
+            "Pleasantville": "0119",
+            "Port Republic": "0120",
+            "Somers Point": "0121",
+            "Ventnor City": "0122",
+            "Weymouth": "0123"
+        },
+        "Bergen": {
+            "Allendale": "0201",
+            "Alpine": "0202",
+            "Bergenfield": "0203",
+            "Bogota": "0204",
+            "Carlstadt": "0205",
+            "Cliffside Park": "0206",
+            "Closter": "0207",
+            "Cresskill": "0208",
+            "Demarest": "0209",
+            "Dumont": "0210",
+            "Elmwood Park": "0211",
+            "East Rutherford": "0212",
+            "Edgewater": "0213",
+            "Emerson": "0214",
+            "Englewood": "0215",
+            "Englewood Cliffs": "0216",
+            "Fair Lawn": "0217",
+            "Fairview": "0218",
+            "Fort Lee": "0219",
+            "Franklin Lakes": "0220",
+            "Garfield": "0221",
+            "Glen Rock": "0222",
+            "Hackensack": "0223",
+            "Harrington Park": "0224",
+            "Hasbrouck Heights": "0225",
+            "Haworth": "0226",
+            "Hillsdale": "0227",
+            "Ho-Ho-Kus": "0228",
+            "Leonia": "0229",
+            "Little Ferry": "0230",
+            "Lodi": "0231",
+            "Lyndhurst": "0232",
+            "Mahwah": "0233",
+            "Maywood": "0234",
+            "Midland Park": "0235",
+            "Montvale": "0236",
+            "Moonachie": "0237",
+            "New Milford": "0238",
+            "North Arlington": "0239",
+            "Northvale": "0240",
+            "Norwood": "0241",
+            "Oakland": "0242",
+            "Old Tappan": "0243",
+            "Oradell": "0244",
+            "Palisades Park": "0245",
+            "Paramus": "0246",
+            "Park Ridge": "0247",
+            "Ramsey": "0248",
+            "Ridgefield": "0249",
+            "Ridgefield Park Village": "0250",
+            "Ridgewood Village": "0251",
+            "River Edge": "0252",
+            "River Vale": "0253",
+            "Rochelle Park": "0254",
+            "Rockleigh": "0255",
+            "Rutherford": "0256",
+            "Saddle Brook": "0257",
+            "Saddle River": "0258",
+            "South Hackensack": "0259",
+            "Teaneck": "0260",
+            "Tenafly": "0261",
+            "Teterboro": "0262",
+            "Upper Saddle River": "0263",
+            "Waldwick": "0264",
+            "Wallington": "0265",
+            "Washington": "0266",
+            "Westwood": "0267",
+            "Woodcliff Lake": "0268",
+            "Wood-Ridge": "0269",
+            "Wyckoff": "0270"
+        },
+        "Burlington": {
+            "Bass River": "0301",
+            "Beverly": "0302",
+            "Bordentown": "0304",
+            "Burlington": "0306",
+            "Chesterfield": "0307",
+            "Cinnaminson": "0308",
+            "Delanco": "0309",
+            "Delran": "0310",
+            "Eastampton": "0311",
+            "Edgewater Park": "0312",
+            "Evesham": "0313",
+            "Fieldsboro": "0314",
+            "Florence": "0315",
+            "Hainesport": "0316",
+            "Lumberton": "0317",
+            "Mansfield": "0318",
+            "Maple Shade": "0319",
+            "Medford": "0320",
+            "Medford Lakes": "0321",
+            "Moorestown": "0322",
+            "Mount Holly": "0323",
+            "Mount Laurel": "0324",
+            "New Hanover": "0325",
+            "North Hanover": "0326",
+            "Palmyra": "0327",
+            "Pemberton": "0329",
+            "Riverside": "0330",
+            "Riverton": "0331",
+            "Shamong": "0332",
+            "Southampton": "0333",
+            "Springfield": "0334",
+            "Tabernacle": "0335",
+            "Washington": "0336",
+            "Westampton": "0337",
+            "Willingboro": "0338",
+            "Woodland": "0339",
+            "Wrightstown": "0340"
+        },
+        "Camden": {
+            "Audubon": "0401",
+            "Audubon Park": "0402",
+            "Barrington": "0403",
+            "Bellmawr": "0404",
+            "Berlin": "0406",
+            "Brooklawn": "0407",
+            "Camden": "0408",
+            "Cherry Hill": "0409",
+            "Chesilhurst": "0410",
+            "Clementon": "0411",
+            "Collingswood": "0412",
+            "Gibbsboro": "0413",
+            "Gloucester City": "0414",
+            "Gloucester": "0415",
+            "Haddon": "0416",
+            "Haddonfield": "0417",
+            "Haddon Heights": "0418",
+            "Hi-Nella": "0419",
+            "Laurel Springs": "0420",
+            "Lawnside": "0421",
+            "Lindenwold": "0422",
+            "Magnolia": "0423",
+            "Merchantville": "0424",
+            "Mount Ephraim": "0425",
+            "Oaklyn": "0426",
+            "Pennsauken": "0427",
+            "Pine Hill": "0428",
+            "Pine Valley": "0429",
+            "Runnemede": "0430",
+            "Somerdale": "0431",
+            "Stratford": "0432",
+            "Tavistock": "0433",
+            "Voorhees": "0434",
+            "Waterford": "0435",
+            "Winslow": "0436",
+            "Woodlynne": "0437"
+        },
+        "Cape May": {
+            "Avalon": "0501",
+            "Cape May": "0502",
+            "Cape May Point": "0503",
+            "Dennis": "0504",
+            "Lower": "0505",
+            "Middle": "0506",
+            "North Wildwood": "0507",
+            "Ocean City": "0508",
+            "Sea Isle City": "0509",
+            "Stone Harbor": "0510",
+            "Upper": "0511",
+            "West Cape May": "0512",
+            "West Wildwood": "0513",
+            "Wildwood": "0514",
+            "Wildwood Crest": "0515",
+            "Woodbine": "0516"
+        },
+        "Cumberland": {
+            "Bridgeton": "0601",
+            "Commercial": "0602",
+            "Deerfield": "0603",
+            "Downe": "0604",
+            "Fairfield": "0605",
+            "Greenwich": "0606",
+            "Hopewell": "0607",
+            "Lawrence": "0608",
+            "Maurice River": "0609",
+            "Millville": "0610",
+            "Shiloh": "0611",
+            "Stow Creek": "0612",
+            "Upper Deerfield": "0613",
+            "Vineland": "0614"
+        },
+        "Essex": {
+            "Belleville": "0701",
+            "Bloomfield": "0702",
+            "Caldwell": "0703",
+            "Cedar Grove": "0704",
+            "East Orange": "0705",
+            "Essex Fells": "0706",
+            "Fairfield": "0707",
+            "Glen Ridge": "0708",
+            "Irvington": "0709",
+            "Livingston": "0710",
+            "Maplewood": "0711",
+            "Millburn": "0712",
+            "Montclair": "0713",
+            "Newark": "0714",
+            "North Caldwell": "0715",
+            "Nutley": "0716",
+            "City of Orange": "0717",
+            "Roseland": "0718",
+            "South Orange Village": "0719",
+            "Verona": "0720",
+            "West Caldwell": "0721",
+            "West Orange": "0722"
+        },
+        "Gloucester": {
+            "Clayton": "0801",
+            "Deptford": "0802",
+            "East Greenwich": "0803",
+            "Elk": "0804",
+            "Franklin": "0805",
+            "Glassboro": "0806",
+            "Greenwich": "0807",
+            "Harrison": "0808",
+            "Logan": "0809",
+            "Mantua": "0810",
+            "Monroe": "0811",
+            "National Park": "0812",
+            "Newfield": "0813",
+            "Paulsboro": "0814",
+            "Pitman": "0815",
+            "South Harrison": "0816",
+            "Swedesboro": "0817",
+            "Washington": "0818",
+            "Wenonah": "0819",
+            "West Deptford": "0820",
+            "Westville": "0821",
+            "Woodbury": "0822",
+            "Woodbury Heights": "0823",
+            "Woolwich": "0824"
+        },
+        "Hudson": {
+            "Bayonne": "0901",
+            "East Newark": "0902",
+            "Guttenberg": "0903",
+            "Harrison": "0904",
+            "Hoboken": "0905",
+            "Jersey City": "0906",
+            "Kearny": "0907",
+            "North Bergen": "0908",
+            "Secaucus": "0909",
+            "Union City": "0910",
+            "Weehawken": "0911",
+            "West New York": "0912"
+        },
+        "Hunterdon": {
+            "Alexandria": "1001",
+            "Bethlehem": "1002",
+            "Bloomsbury": "1003",
+            "Califon": "1004",
+            "Clinton": "1006",
+            "Delaware": "1007",
+            "East Amwell": "1008",
+            "Flemington": "1009",
+            "Franklin": "1010",
+            "Frenchtown": "1011",
+            "Glen Gardner": "1012",
+            "Hampton": "1013",
+            "High Bridge": "1014",
+            "Holland": "1015",
+            "Kingwood": "1016",
+            "Lambertville": "1017",
+            "Lebanon": "1019",
+            "Milford": "1020",
+            "Raritan": "1021",
+            "Readington": "1022",
+            "Stockton": "1023",
+            "Tewksbury": "1024",
+            "Union": "1025",
+            "West Amwell": "1026"
+        },
+        "Mercer": {
+            "East Windsor": "1101",
+            "Ewing": "1102",
+            "Hamilton": "1103",
+            "Hightstown": "1104",
+            "Hopewell": "1106",
+            "Lawrence": "1107",
+            "Pennington": "1108",
+            "Princeton": "1114",
+            "Trenton": "1111",
+            "Robbinsville": "1112",
+            "West Windsor": "1113"
+        },
+        "Middlesex": {
+            "Carteret": "1201",
+            "Cranbury": "1202",
+            "Dunellen": "1203",
+            "East Brunswick": "1204",
+            "Edison": "1205",
+            "Helmetta": "1206",
+            "Highland Park": "1207",
+            "Jamesburg": "1208",
+            "Metuchen": "1209",
+            "Middlesex": "1210",
+            "Milltown": "1211",
+            "Monroe": "1212",
+            "New Brunswick": "1213",
+            "North Brunswick": "1214",
+            "Old Bridge": "1215",
+            "Perth Amboy": "1216",
+            "Piscataway": "1217",
+            "Plainsboro": "1218",
+            "Sayreville": "1219",
+            "South Amboy": "1220",
+            "South Brunswick": "1221",
+            "South Plainfield": "1222",
+            "South River": "1223",
+            "Spotswood": "1224",
+            "Woodbridge": "1225"
+        },
+        "Monmouth": {
+            "Aberdeen": "1301",
+            "Allenhurst": "1302",
+            "Allentown": "1303",
+            "Asbury Park": "1304",
+            "Atlantic Highlands": "1305",
+            "Avon-by-the-Sea": "1306",
+            "Belmar": "1307",
+            "Bradley Beach": "1308",
+            "Brielle": "1309",
+            "Colts Neck": "1310",
+            "Deal": "1311",
+            "Eatontown": "1312",
+            "Englishtown": "1313",
+            "Fair Haven": "1314",
+            "Farmingdale": "1315",
+            "Freehold": "1317",
+            "Hazlet": "1318",
+            "Highlands": "1319",
+            "Holmdel": "1320",
+            "Howell": "1321",
+            "Interlaken": "1322",
+            "Keansburg": "1323",
+            "Keyport": "1324",
+            "Little Silver": "1325",
+            "Loch Arbour Village": "1326",
+            "Long Branch": "1327",
+            "Manalapan": "1328",
+            "Manasquan": "1329",
+            "Marlboro": "1330",
+            "Matawan": "1331",
+            "Middletown": "1332",
+            "Millstone": "1333",
+            "Monmouth Beach": "1334",
+            "Neptune": "1335",
+            "Neptune City": "1336",
+            "Ocean": "1337",
+            "Oceanport": "1338",
+            "Red Bank": "1339",
+            "Roosevelt": "1340",
+            "Rumson": "1341",
+            "Sea Bright": "1342",
+            "Sea Girt": "1343",
+            "Shrewsbury": "1345",
+            "Lake Como": "1346",
+            "Spring Lake": "1347",
+            "Spring Lake Heights": "1348",
+            "Tinton Falls": "1349",
+            "Union Beach": "1350",
+            "Upper Freehold": "1351",
+            "Wall": "1352",
+            "West Long Branch": "1353"
+        },
+        "Morris": {
+            "Boonton": "1402",
+            "Butler": "1403",
+            "Chatham": "1405",
+            "Chester": "1407",
+            "Denville": "1408",
+            "Dover": "1409",
+            "East Hanover": "1410",
+            "Florham Park": "1411",
+            "Hanover": "1412",
+            "Harding": "1413",
+            "Jefferson": "1414",
+            "Kinnelon": "1415",
+            "Lincoln Park": "1416",
+            "Madison": "1417",
+            "Mendham": "1419",
+            "Mine Hill": "1420",
+            "Montville": "1421",
+            "Morris": "1422",
+            "Morris Plains": "1423",
+            "Morristown": "1424",
+            "Mountain Lakes": "1425",
+            "Mount Arlington": "1426",
+            "Mount Olive": "1427",
+            "Netcong": "1428",
+            "Parsippany-Troy Hills": "1429",
+            "Long Hill": "1430",
+            "Pequannock": "1431",
+            "Randolph": "1432",
+            "Riverdale": "1433",
+            "Rockaway": "1435",
+            "Roxbury": "1436",
+            "Victory Gardens": "1437",
+            "Washington": "1438",
+            "Wharton": "1439"
+        },
+        "Ocean": {
+            "Barnegat": "1501",
+            "Barnegat Light": "1502",
+            "Bay Head": "1503",
+            "Beach Haven": "1504",
+            "Beachwood": "1505",
+            "Berkeley": "1506",
+            "Brick": "1507",
+            "Toms River": "1508",
+            "Eagleswood": "1509",
+            "Harvey Cedars": "1510",
+            "Island Heights": "1511",
+            "Jackson": "1512",
+            "Lacey": "1513",
+            "Lakehurst": "1514",
+            "Lakewood": "1515",
+            "Lavallette": "1516",
+            "Little Egg Harbor": "1517",
+            "Long Beach": "1518",
+            "Manchester": "1519",
+            "Mantoloking": "1520",
+            "Ocean": "1521",
+            "Ocean Gate": "1522",
+            "Pine Beach": "1523",
+            "Plumsted": "1524",
+            "Point Pleasant": "1525",
+            "Point Pleasant Beach": "1526",
+            "Seaside Heights": "1527",
+            "Seaside Park": "1528",
+            "Ship Bottom": "1529",
+            "South Toms River": "1530",
+            "Stafford": "1531",
+            "Surf City": "1532",
+            "Tuckerton": "1533"
+        },
+        "Passaic": {
+            "Bloomingdale": "1601",
+            "Clifton": "1602",
+            "Haledon": "1603",
+            "Hawthorne": "1604",
+            "Little Falls": "1605",
+            "North Haledon": "1606",
+            "Passaic": "1607",
+            "Paterson": "1608",
+            "Pompton Lakes": "1609",
+            "Prospect Park": "1610",
+            "Ringwood": "1611",
+            "Totowa": "1612",
+            "Wanaque": "1613",
+            "Wayne": "1614",
+            "West Milford": "1615",
+            "Woodland Park": "1616"
+        },
+        "Salem": {
+            "Alloway": "1701",
+            "Carneys Point": "1702",
+            "Elmer": "1703",
+            "Elsinboro": "1704",
+            "Lower Alloways Creek": "1705",
+            "Mannington": "1706",
+            "Oldmans": "1707",
+            "Penns Grove": "1708",
+            "Pennsville": "1709",
+            "Pilesgrove": "1710",
+            "Pittsgrove": "1711",
+            "Quinton": "1712",
+            "Salem": "1713",
+            "Upper Pittsgrove": "1714",
+            "Woodstown": "1715"
+        },
+        "Somerset": {
+            "Bedminster": "1801",
+            "Bernards": "1802",
+            "Bernardsville": "1803",
+            "Bound Brook": "1804",
+            "Branchburg": "1805",
+            "Bridgewater": "1806",
+            "Far Hills": "1807",
+            "Franklin": "1808",
+            "Green Brook": "1809",
+            "Hillsborough": "1810",
+            "Manville": "1811",
+            "Millstone": "1812",
+            "Montgomery": "1813",
+            "North Plainfield": "1814",
+            "Peapack-Gladstone": "1815",
+            "Raritan": "1816",
+            "Rocky Hill": "1817",
+            "Somerville": "1818",
+            "South Bound Brook": "1819",
+            "Warren": "1820",
+            "Watchung": "1821"
+        },
+        "Sussex": {
+            "Andover": "1902",
+            "Branchville": "1903",
+            "Byram": "1904",
+            "Frankford": "1905",
+            "Franklin": "1906",
+            "Fredon": "1907",
+            "Green": "1908",
+            "Hamburg": "1909",
+            "Hampton": "1910",
+            "Hardyston": "1911",
+            "Hopatcong": "1912",
+            "Lafayette": "1913",
+            "Montague": "1914",
+            "Newton": "1915",
+            "Ogdensburg": "1916",
+            "Sandyston": "1917",
+            "Sparta": "1918",
+            "Stanhope": "1919",
+            "Stillwater": "1920",
+            "Sussex": "1921",
+            "Vernon": "1922",
+            "Walpack": "1923",
+            "Wantage": "1924"
+        },
+        "Union": {
+            "Berkeley Heights": "2001",
+            "Clark": "2002",
+            "Cranford": "2003",
+            "Elizabeth": "2004",
+            "Fanwood": "2005",
+            "Garwood": "2006",
+            "Hillside": "2007",
+            "Kenilworth": "2008",
+            "Linden": "2009",
+            "Mountainside": "2010",
+            "New Providence": "2011",
+            "Plainfield": "2012",
+            "Rahway": "2013",
+            "Roselle": "2014",
+            "Roselle Park": "2015",
+            "Scotch Plains": "2016",
+            "Springfield": "2017",
+            "Summit": "2018",
+            "Union": "2019",
+            "Westfield": "2020",
+            "Winfield": "2021"
+        },
+        "Warren": {
+            "Allamuchy": "2101",
+            "Alpha": "2102",
+            "Belvidere": "2103",
+            "Blairstown": "2104",
+            "Franklin": "2105",
+            "Frelinghuysen": "2106",
+            "Greenwich": "2107",
+            "Hackettstown": "2108",
+            "Hardwick": "2109",
+            "Harmony": "2110",
+            "Hope": "2111",
+            "Independence": "2112",
+            "Knowlton": "2113",
+            "Liberty": "2114",
+            "Lopatcong": "2115",
+            "Mansfield": "2116",
+            "Oxford": "2117",
+            "Phillipsburg": "2119",
+            "Pohatcong": "2120",
+            "Washington": "2122",
+            "White": "2123"
+        }
+    }
+
+
+def getRangeFromString(string):
+    try:
+        if string == "":
+            return []
+        elif "," in string:
+            if "-" in string:
+                rng = []
+                for x in string.split(","):
+                    rng.extend(getRangeFromString(x.strip()))
+                return rng
+            return [float(i) for i in string.split(",")]
+        elif "-" in string:
+            start, end = string.split("-")
+            return list(range(int(start), int(end) + 1))
+        return [float(string)]
+    except:
+        print(f"Error in range ({string})")
+
+
+def getBlockLotQual(label):
+    print(f"Getting block lot qual for {label}")
+    label = label
+    block = label.split()[1]
+    lot = label.split("Lot")[1].strip().replace("and", ",").replace("&", ",").replace(" ,", ',').replace(',,', ',')
+    qual = ""
+    pattern = re.compile(r'\b[a-zA-Z]\w*\b')
+    result = pattern.findall(lot)
+    if len(result) == 1:
+        qual = result[0]
+        print(f"Got qualifier {qual}")
+        lot = lot.replace(qual, "").strip()[:-1]
+    if len(lot.split()) == 2 and "," not in lot and "-" not in lot:
+        qual = lot.split()[-1]
+        print(f"Got qualifier {qual}")
+        lot = lot.split()[0]
+    return block, getRangeFromString(lot), qual
+
+
+def processError():
+    if os.path.isfile("error.txt"):
+        with open("error.txt", "r") as f:
+            lines = f.readlines()
+        for line in lines:
+            line = line.strip().split(",")
+            print(line)
+            getNJactb(line[0], line[1], line[2], line[3])
+
+
 if __name__ == "__main__":
+    # print(getBlockLotQual("Block 163.22        Lot 6, C2942"))
+    # exit()
+    # processAllJson()
     main()
+    # driver = getChromeDriver()
+    # getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "4362", "23")
+    # getGoogleAddress("283 Landing Rd, Downe , Cumberland")
+    # checkNJATCB()
+    # getNJactb("Sussex","Stanhope","11701","14")
