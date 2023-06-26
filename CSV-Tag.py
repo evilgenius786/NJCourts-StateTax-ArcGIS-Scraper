@@ -92,7 +92,7 @@ no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Hunterdon', 'Mercer',
 
 def main():
     new_rows=[]
-    with open("tags_all.csv", 'r', encoding='utf-8-sig') as f:
+    with open("NJC.csv", 'r', encoding='utf-8-sig') as f:
         csv_file = csv.DictReader(f)
         for row in csv_file:
             # print(row)
@@ -119,7 +119,7 @@ def main():
             }
             print(new_row)
             new_rows.append(new_row)
-    with open('new_tags.csv', 'w', encoding='utf-8-sig', newline='') as f:
+    with open('NJC-Tag.csv', 'w', encoding='utf-8-sig', newline='') as f:
         fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Tags']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
