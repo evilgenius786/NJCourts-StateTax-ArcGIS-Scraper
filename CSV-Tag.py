@@ -84,6 +84,7 @@
 # NJC 10-YES-COs, NJC🧿-PreForeclosure🧿👢, NJC Commercial M-Forec,
 import csv
 import datetime
+import json
 
 yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Middlesex', 'Morris', 'Passaic', 'Somerset',
        'Union']
@@ -92,12 +93,11 @@ no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Hunterdon', 'Mercer',
 
 
 def main():
-    new_rows=[]
+    new_rows = []
     with open("NJC.csv", 'r', encoding='utf-8-sig') as f:
         csv_file = csv.DictReader(f)
         for row in csv_file:
             # print(row)
-
             tags = []
             if "Camden City" in row['CourtPropertyAddress']:
                 tags.append('NJC 11-NO-COs')
@@ -127,7 +127,8 @@ def main():
                 "CourtPropertyAddress": row['CourtPropertyAddress'],
                 "Case Initiation Date": row['Case Initiation Date'],
                 "Case Status": row['Case Status'],
-                "Tags":  ', '.join(tags)
+                "Tags": ', '.join(tags),
+                # "Comments": json.dumps(json.loads(row['Comments']), indent=4)
             }
             print(new_row)
             new_rows.append(new_row)

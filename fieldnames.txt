@@ -124,3 +124,4 @@ ArcGis_SALE_PRICE
 ArcGis_PCL_PBDATE
 ArcGis_PCL_GUID
 Comments
+Tags

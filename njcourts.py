@@ -53,6 +53,48 @@ tax_data_url = {
     "Essex": "6229fbf0ce4aef911f9de7bc",
     "Middlesex": "623085dd284c51d4d32ff9fe",
 }
+yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Middlesex', 'Morris', 'Passaic', 'Somerset',
+       'Union']
+no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Hunterdon', 'Mercer', 'Monmouth', 'Ocean', 'Salem', 'Sussex',
+      'Warren']
+
+
+def getTag(row):
+    tags = []
+    if "Camden City" in row['CourtPropertyAddress']:
+        tags.append('NJC 11-NO-COs')
+    elif row['Venue'] in yes:
+        tags.append('NJC 10-YES-COs')
+    elif row['Venue'] in no:
+        tags.append('NJC 11-NO-COs')
+
+    tags.append(f'zz1-NJ-{row["Venue"]} Co')
+    # zz0-NJ-Closed
+    # zz0-NJ-Dismissed
+    tags.append(f'zz0-NJ-{row["Case Status"]} Co')
+
+    if row['Case Type'] == 'In Personam Tax Foreclosure' or row['Case Type'] == 'In Rem Tax Foreclosure':
+        tags.append('NJC🧿-PROPERTY TAX PreFORECLOSURE🔥🧧👢🔥')
+    elif row['Case Type'] == 'Commercial Mortgage Foreclosure':
+        tags.append('NJC🧿-PreForeclosure🧿👢')
+        tags.append('NJC Commercial M-Forec')
+    else:
+        tags.append('NJC🧿-PreForeclosure🧿👢')
+    date = datetime.datetime.strptime(row['Case Initiation Date'], '%Y-%m-%d')
+    tags.append(f'LP Bot NJCF {date.strftime("%Y-%m")} 🟦🤖')
+    tags.append(f'zz_NJC_{date.strftime("%Y-%m-%d")}')
+    new_row = {
+        "Venue": row['Venue'],
+        "Case Type": row['Case Type'],
+        "CourtPropertyAddress": row['CourtPropertyAddress'],
+        "Case Initiation Date": row['Case Initiation Date'],
+        "Case Status": row['Case Status'],
+        "Tags": ', '.join(tags)
+    }
+    print(new_row)
+    return ', '.join(tags)
+
+
 if os.path.isfile("fieldnames.txt"):
     with open('fieldnames.txt') as ffile:
         fieldnames = ffile.read().splitlines()
@@ -89,7 +131,7 @@ else:
                   "StateTax_Bldg Desc", "StateTax_Updated", "StateTax_Zone", "ArcGis_PAMS_PIN", "ArcGis_PCL_MUN",
                   "ArcGis_PCLBLOCK", "ArcGis_PCLLOT", "ArcGis_PROP_CLASS", "ArcGis_LAND_VAL", "ArcGis_IMPRVT_VAL",
                   "ArcGis_NET_VALUE", "ArcGis_LAST_YR_TX", "ArcGis_DEED_DATE", "ArcGis_SALE_PRICE", "ArcGis_PCL_PBDATE",
-                  "ArcGis_PCL_GUID", "Comments"]
+                  "ArcGis_PCL_GUID", "Comments", "Tags"]
     with open('fieldnames.txt', 'w') as ffile:
         ffile.write("\n".join(fieldnames))
 
@@ -313,20 +355,15 @@ def processJson(f):
                 traceback.print_exc()
                 # input("Press any key...")
             newfile = f"./CSV_json/CSV-{f.replace('/', '_').replace('.json', '')}-{data['Label'].replace('/', '_')}.json"
-            updated_data['Comments'] = updated_data.copy()
             if test:
                 print(updated_data.keys())
-            print(f"Writing {newfile}...")
-            with open(newfile, 'w') as jfile:
-                json.dump(updated_data, jfile, indent=4)
-            append(updated_data)
+
+            append(updated_data, newfile)
     else:
         newfile = f"./CSV_json/CSV-{f}.json".replace("/", "_")
         updated_data = flatten_json(data)
-        updated_data['Comments'] = updated_data.copy()
-        with open(newfile, 'w') as jfile:
-            json.dump(updated_data, jfile, indent=4)
-        append(updated_data)
+
+        append(updated_data, newfile)
     if not test:
         convert(scrapedcsv)
         CategorizeJson(f)
@@ -707,17 +744,11 @@ def getData(soup, driver, n, y):
                     elif county == "Ocean":
                         tab_data["StateTax"] = getOcean(district, block, lot, qual)
                     else:
-                        try:
-                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
-                        except:
-                            pass
+                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
                     if county in ['Middlesex', 'Essex']:
-                        try:
-                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
-                        except:
-                            pass
+                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
                     tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
                     tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
                     # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
@@ -1359,9 +1390,13 @@ def flatten_json(y):
     return out
 
 
-def append(data):
+def append(updated_data, newfile):
+    updated_data['Tags'] = getTag(updated_data)
+    updated_data['Comments'] = json.dumps(updated_data.copy(), indent=4)
+    with open(newfile, 'w') as jfile:
+        json.dump(updated_data, jfile, indent=4)
     with open(scrapedcsv, 'a', newline='', encoding=encoding) as sfile:
-        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(data)
+        csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(updated_data)
 
 
 def click(driver, xpath, js=False):
@@ -1404,8 +1439,6 @@ def processNames():
 
 
 def checkNJATCB():
-    import requests
-
     headers = {
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
         'Accept-Language': 'en-US,en;q=0.9',
