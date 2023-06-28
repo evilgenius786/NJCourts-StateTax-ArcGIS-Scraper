@@ -41,7 +41,7 @@ headless = False
 images = True
 maximize = False
 incognito = False
-encoding = 'utf8'
+encoding = 'utf-8-sig'
 nj_url = 'https://portal.njcourts.gov/CIVILCaseJacketWeb/pages/civilCaseSearch.faces'
 disclaimer = "https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces"
 count = 1
@@ -1211,7 +1211,10 @@ def initialize():
     #     with open(nrfile, 'w') as nfile:
     #         nfile.write("")
     if not os.path.isfile(scrapedcsv):
-        with open(scrapedcsv, 'w', newline='', encoding=encoding) as sfile:
+        with open(scrapedcsv, 'w', newline='',
+                  encoding=encoding,
+            # errors="ignore"
+                  ) as sfile:
             csv.DictWriter(sfile, fieldnames=fieldnames).writeheader()
     # with open(nrfile) as nfile:
     #     notrequired = nfile.read().splitlines()
@@ -1284,7 +1287,10 @@ def processAllJson():
 
 
 def convert(filename):
-    pd.read_csv(filename, encoding=encoding).to_excel(filename.replace("csv", "xlsx"), index=False)
+    pd.read_csv(filename,
+                encoding=encoding
+                # encoding_errors="ignore"
+                ).to_excel(filename.replace("csv", "xlsx"), index=False)
 
 
 def CategorizeAllJson():
@@ -1395,7 +1401,10 @@ def append(updated_data, newfile):
     updated_data['Comments'] = json.dumps(updated_data.copy(), indent=4)
     with open(newfile, 'w') as jfile:
         json.dump(updated_data, jfile, indent=4)
-    with open(scrapedcsv, 'a', newline='', encoding=encoding) as sfile:
+    with open(scrapedcsv, 'a', newline='',
+              encoding=encoding
+        # errors="ignore"
+              ) as sfile:
         csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(updated_data)
 
 
