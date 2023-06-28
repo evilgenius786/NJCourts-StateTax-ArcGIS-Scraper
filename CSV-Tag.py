@@ -1,87 +1,3 @@
-# FILTER TAGS FOR CSV/ EXCEL FILE
-#
-# TAG SAMPLE NJ-Courts - Copy.xlsx LINK:
-# https://docs.google.com/spreadsheets/d/1kvp_ESWPdyma-Mk0CWGCVTri5e1O5rFA/edit?usp=sharing&ouid=100866359998801707187&rtpof=true&sd=true
-#
-# TAG A:   “NJC 10-YES-COs”
-# OR
-# TAG B:    “NJC 11-NO-COs”
-#
-# Divide the 21 counties…. First 10 counties, yes, AND last 11 counties no.
-#
-#  TAG C (Use venue D column in the Screenshot below.):
-#        (LIST 1 “NJC 10-YES-COs”) [SEE Screenshot PINK-RECORDS]
-#
-# zz1-NJ-Bergen Co
-# zz1-NJ-Burlington Co
-#
-# zz1-NJ-Camden Co
-# **(In Addition tag THE CITY OF CAMDEN [SEE Screenshot GREEN-RECORDS]
-#       zz1-NJ-Camden City
-#
-# zz1-NJ-Essex Co
-# zz1-NJ-Hudson Co
-# zz1-NJ-Middlesex Co
-# zz1-NJ-Morris County
-# zz1-NJ-Passaic County
-# zz1-NJ-Somerset County
-# zz1-NJ-Union County
-#
-#
-#
-#   (LIST 2 “NJC 11-NO-COs”) [SEE Screenshot PINK-RECORDS]
-#
-# zz1-NJ-Atlantic Co
-# zz1-NJ-Cape May County
-# zz1-NJ-Cumberland Co
-# zz1-NJ-Gloucester Co
-# zz1-NJ-Hunterdon Co
-# zz1-NJ-Mercer Co
-# zz1-NJ-Monmouth Co
-# zz1-NJ-Ocean County
-# zz1-NJ-Salem County
-# zz1-NJ-Sussex County
-# zz1-NJ-Warren County
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-#
-# For the last 3 tags use Column F “case type.” From the YELLOW-RECORDS screenshot above.
-#
-# TAG D:   “NJC🧿-PROPERTY TAX PreFORECLOSURE🔥🧧👢🔥”
-# All with either:    “In Personam Tax Foreclosure”
-# Or   “In Rem Tax Foreclosure”
-#
-#
-# TAG F:  “NJC🧿-PreForeclosure🧿👢”  +   “NJC Commercial M-Forec”
-# All with “Commercial Mortgage Foreclosure” Get the above 2 tags.
-#
-#
-# TAG G:  “NJC🧿-PreForeclosure🧿👢”
-# All remaining rows/Files on the CSV/ Excel worksheet get this tag, please
-#
-#
-# All tags must be in one column. Separated with A space and a comma like in the screenshot below:
-#
-# Example As written in the “AA” column, “Row 10.“:
-# NJC 10-YES-COs, NJC🧿-PreForeclosure🧿👢, NJC Commercial M-Forec,
 import csv
 import datetime
 import json
@@ -90,11 +6,17 @@ yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Midd
        'Union']
 no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Hunterdon', 'Mercer', 'Monmouth', 'Ocean', 'Salem', 'Sussex',
       'Warren']
+fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Case Initiation Date', 'Case Status', "CourtBusinessName",
+              "CourtNameType", "CourtFirstName", "CourtMiddleName", "CourtLastName", "StateTaxBusinessName",
+              "CourtNormalizedPropertyAddress", "Sift1PropStreet", "Sift1PropCity", "Sift1PropState", "Sift1PropZip",
+              'Tags', 'Comments']
 
 
 def main():
     new_rows = []
-    with open("NJC.csv", 'r', encoding='utf-8-sig') as f:
+    infile = input("Enter the input file name: ")
+    outfile = input("Enter the output file name: ")
+    with open(infile, 'r', encoding='utf-8-sig') as f:
         csv_file = csv.DictReader(f)
         for row in csv_file:
             # print(row)
@@ -107,8 +29,6 @@ def main():
                 tags.append('NJC 11-NO-COs')
 
             tags.append(f'zz1-NJ-{row["Venue"]} Co')
-            # zz0-NJ-Closed
-            # zz0-NJ-Dismissed
             tags.append(f'zz0-NJ-{row["Case Status"]} Co')
 
             if row['Case Type'] == 'In Personam Tax Foreclosure' or row['Case Type'] == 'In Rem Tax Foreclosure':
@@ -130,10 +50,13 @@ def main():
                 "Tags": ', '.join(tags),
                 # "Comments": json.dumps(json.loads(row['Comments']), indent=4)
             }
+            for field in fieldnames:
+                if field not in new_row:
+                    new_row[field] = row[field]
             print(new_row)
+            new_row['Comments'] = json.dumps(new_row.copy(), indent=4)
             new_rows.append(new_row)
-    with open('NJC-Tag.csv', 'w', encoding='utf-8-sig', newline='') as f:
-        fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Case Initiation Date', 'Case Status', 'Tags']
+    with open(outfile, 'w', encoding='utf-8-sig', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(new_rows)
