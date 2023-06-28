@@ -106,6 +106,11 @@ def main():
             elif row['Venue'] in no:
                 tags.append('NJC 11-NO-COs')
 
+            tags.append(f'zz1-NJ-{row["Venue"]} Co')
+            # zz0-NJ-Closed
+            # zz0-NJ-Dismissed
+            tags.append(f'zz0-NJ-{row["Case Status"]} Co')
+
             if row['Case Type'] == 'In Personam Tax Foreclosure' or row['Case Type'] == 'In Rem Tax Foreclosure':
                 tags.append('NJC🧿-PROPERTY TAX PreFORECLOSURE🔥🧧👢🔥')
             elif row['Case Type'] == 'Commercial Mortgage Foreclosure':
@@ -121,12 +126,13 @@ def main():
                 "Case Type": row['Case Type'],
                 "CourtPropertyAddress": row['CourtPropertyAddress'],
                 "Case Initiation Date": row['Case Initiation Date'],
+                "Case Status": row['Case Status'],
                 "Tags":  ', '.join(tags)
             }
             print(new_row)
             new_rows.append(new_row)
     with open('NJC-Tag.csv', 'w', encoding='utf-8-sig', newline='') as f:
-        fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Case Initiation Date', 'Tags']
+        fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Case Initiation Date', 'Case Status', 'Tags']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(new_rows)
