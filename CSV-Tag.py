@@ -83,6 +83,7 @@
 # Example As written in the “AA” column, “Row 10.“:
 # NJC 10-YES-COs, NJC🧿-PreForeclosure🧿👢, NJC Commercial M-Forec,
 import csv
+import datetime
 
 yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Middlesex', 'Morris', 'Passaic', 'Somerset',
        'Union']
@@ -96,6 +97,7 @@ def main():
         csv_file = csv.DictReader(f)
         for row in csv_file:
             # print(row)
+
             tags = []
             if "Camden City" in row['CourtPropertyAddress']:
                 tags.append('NJC 11-NO-COs')
@@ -111,16 +113,20 @@ def main():
                 tags.append('NJC Commercial M-Forec')
             else:
                 tags.append('NJC🧿-PreForeclosure🧿👢')
+            date = datetime.datetime.strptime(row['Case Initiation Date'], '%Y-%m-%d')
+            tags.append(f'LP Bot NJCF {date.strftime("%Y-%m")} 🟦🤖')
+            tags.append(f'zz_NJC_{date.strftime("%Y-%m-%d")}')
             new_row = {
                 "Venue": row['Venue'],
                 "Case Type": row['Case Type'],
                 "CourtPropertyAddress": row['CourtPropertyAddress'],
+                "Case Initiation Date": row['Case Initiation Date'],
                 "Tags":  ', '.join(tags)
             }
             print(new_row)
             new_rows.append(new_row)
     with open('NJC-Tag.csv', 'w', encoding='utf-8-sig', newline='') as f:
-        fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Tags']
+        fieldnames = ['Venue', 'Case Type', 'CourtPropertyAddress', 'Case Initiation Date', 'Tags']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(new_rows)
