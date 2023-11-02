@@ -1,5 +1,6 @@
 import csv
 import datetime
+import json
 import os.path
 import re
 import time
@@ -10,13 +11,9 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from webdriver_manager.chrome import ChromeDriverManager
-
-import json
 
 t = 1
 timeout = 10
@@ -34,8 +31,8 @@ filter_dir = "All NJ-COURT Filtered Forc"
 other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
-# debug = os.path.isfile("debug")
-debug = False
+debug = os.path.isfile("debug")
+# debug = False
 test = False
 headless = False
 images = True
@@ -54,9 +51,8 @@ tax_data_url = {
     "Middlesex": "623085dd284c51d4d32ff9fe",
 }
 yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Middlesex', 'Morris', 'Passaic', 'Somerset',
-       'Union']
-no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Hunterdon', 'Mercer', 'Monmouth', 'Ocean', 'Salem', 'Sussex',
-      'Warren']
+       'Union','Hunterdon','Monmouth','Ocean','Sussex','Warren']
+no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester',  'Mercer',   'Salem']
 
 
 def getTag(row):
@@ -855,14 +851,17 @@ def processNjCourts(dockets=None):
         nums = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
         years = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
         num_years = [(num, year) for year in years for num in nums]
+    print("Connecting to Chrome...")
     driver = getChromeDriver()
-    if "portal.njcourts.gov" not in driver.current_url:
-        driver.get(nj_url)
-        if "Enter user ID and password" in driver.page_source:
-            driver.delete_all_cookies()
-            driver.get(disclaimer)
-        time.sleep(3)
-        checkDisclaimer(driver)
+    print("Connected!")
+    # if "portal.njcourts.gov" not in driver.current_url:
+    #     driver.get(nj_url)
+    #     if "Enter user ID and password" in driver.page_source:
+    #         driver.delete_all_cookies()
+    #         driver.get(disclaimer)
+    #     time.sleep(3)
+    # checkDisclaimer(driver)
+    input("Please goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces\nthen goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/civilCaseSearch.faces and press enter when done:")
     for n, y in num_years:
         if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
             print(f"Skipping {y}-{n}")
@@ -993,6 +992,7 @@ def waitCaptcha(driver):
     time.sleep(5)
     fillagain = False
     captchacount = 1
+    print("Waiting for captcha...")
     while "Captcha solved!" not in driver.page_source and "captcha-solver-info" in driver.page_source:
         pprint(f"Solving captcha ({captchacount})....")
         captchacount += 1
@@ -1041,7 +1041,7 @@ def checkDisclaimer(driver):
         time.sleep(1)
         waitCaptcha(driver)
         try:
-            driver.find_element(By.XPATH, '//*[@id="disclaimerform:button"]').click()
+            click(driver, '//*[@id="disclaimerform:button"]',True)
         except:
             pprint("Disclaimer captcha manually solved!")
         time.sleep(1)
@@ -1334,7 +1334,7 @@ def getChromeDriver(proxy=None):
         options.add_experimental_option('useAutomationExtension', False)
         options.add_argument("--disable-blink-features")
         options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument('--user-data-dir=C:/Selenium/ChromeProfile')
+        options.add_argument('--user-data-dir=C:/Selenium/NJCourts')
     if not images:
         # print("Turning off images to save bandwidth")
         options.add_argument("--blink-settings=imagesEnabled=false")
@@ -1351,7 +1351,7 @@ def getChromeDriver(proxy=None):
     if incognito:
         # print("Going incognito")
         options.add_argument("--incognito")
-    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+    return webdriver.Chrome(options=options)
 
 
 def getFirefoxDriver():
@@ -1409,6 +1409,7 @@ def append(updated_data, newfile):
 
 
 def click(driver, xpath, js=False):
+    print(f"Clicking {xpath}")
     if js:
         driver.execute_script("arguments[0].click();", getElement(driver, xpath))
     else:
