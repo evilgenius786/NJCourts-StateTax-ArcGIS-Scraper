@@ -11,9 +11,11 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from webdriver_manager.chrome import ChromeDriverManager
 
 t = 1
 timeout = 10
@@ -1351,7 +1353,7 @@ def getChromeDriver(proxy=None):
     if incognito:
         # print("Going incognito")
         options.add_argument("--incognito")
-    return webdriver.Chrome(options=options)
+    return webdriver.Chrome(options=options,service=Service(ChromeDriverManager().install()))
 
 
 def getFirefoxDriver():
