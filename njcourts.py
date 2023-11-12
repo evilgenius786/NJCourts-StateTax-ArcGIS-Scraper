@@ -8,16 +8,13 @@ import traceback
 from time import sleep
 
 import chromedriver_autoinstall
-import chromedriver_autoinstaller
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from webdrivermanager.chrome import ChromeDriverManager
 
 t = 1
 timeout = 10
