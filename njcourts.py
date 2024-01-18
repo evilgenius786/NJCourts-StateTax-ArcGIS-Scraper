@@ -8,6 +8,7 @@ import traceback
 from time import sleep
 
 import chromedriver_autoinstall
+import chromedriver_binary_sync
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
@@ -51,9 +52,22 @@ tax_data_url = {
     "Essex": "6229fbf0ce4aef911f9de7bc",
     "Middlesex": "623085dd284c51d4d32ff9fe",
 }
+
 yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Middlesex', 'Morris', 'Passaic', 'Somerset',
-       'Union','Hunterdon','Monmouth','Ocean','Sussex','Warren']
-no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester',  'Mercer',   'Salem']
+       'Union', 'Hunterdon', 'Monmouth', 'Ocean', 'Sussex', 'Warren']
+# Add these counties but exempt certain cities:
+#
+# Atlantic Co        NO:   Atlantic City,   NO Mays landing
+# Mercer Co         NO: TRENTON
+# Gloucester Co   NO:     Paulsboro, Westville and Woodbury
+# -
+# you must add the property new tag    18-YES-COs
+no_cities= {
+    "Atlantic": ["Atlantic City", "Mays Landing"],
+    "Mercer": ["Trenton"],
+    "Gloucester": ["Paulsboro", "Westville", "Woodbury"]
+}
+no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Mercer', 'Salem']
 
 
 def getTag(row):
@@ -61,10 +75,15 @@ def getTag(row):
     if "Camden City" in row['CourtPropertyAddress']:
         tags.append('NJC 11-NO-COs')
     elif row['Venue'] in yes:
-        tags.append('NJC 10-YES-COs')
+        tags.append('NJC 18-YES-COs')
+    # elif row['Sift1PropCity']
+    elif row['Venue'] in no_cities:
+        if row['Sift1PropCity'] in no_cities[row['Venue']]:
+            tags.append('NJC 11-NO-COs')
+        else:
+            tags.append('NJC 18-YES-COs')
     elif row['Venue'] in no:
         tags.append('NJC 11-NO-COs')
-
     tags.append(f'zz1-NJ-{row["Venue"]} Co')
     # zz0-NJ-Closed
     # zz0-NJ-Dismissed
@@ -862,7 +881,8 @@ def processNjCourts(dockets=None):
     #         driver.get(disclaimer)
     #     time.sleep(3)
     # checkDisclaimer(driver)
-    input("Please goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces\nthen goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/civilCaseSearch.faces and press enter when done:")
+    input(
+        "Please goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces\nthen goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/civilCaseSearch.faces and press enter when done:")
     for n, y in num_years:
         if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
             print(f"Skipping {y}-{n}")
@@ -1042,7 +1062,7 @@ def checkDisclaimer(driver):
         time.sleep(1)
         waitCaptcha(driver)
         try:
-            click(driver, '//*[@id="disclaimerform:button"]',True)
+            click(driver, '//*[@id="disclaimerform:button"]', True)
         except:
             pprint("Disclaimer captcha manually solved!")
         time.sleep(1)
@@ -1214,7 +1234,7 @@ def initialize():
     if not os.path.isfile(scrapedcsv):
         with open(scrapedcsv, 'w', newline='',
                   encoding=encoding,
-            # errors="ignore"
+                  # errors="ignore"
                   ) as sfile:
             csv.DictWriter(sfile, fieldnames=fieldnames).writeheader()
     # with open(nrfile) as nfile:
@@ -1353,7 +1373,8 @@ def getChromeDriver(proxy=None):
         # print("Going incognito")
         options.add_argument("--incognito")
     # chromedriver_autoinstaller.install()
-    chromedriver_autoinstall.install()
+    # chromedriver_autoinstall.install()
+    chromedriver_binary_sync.download()
     return webdriver.Chrome(options=options)
 
 
@@ -1406,7 +1427,7 @@ def append(updated_data, newfile):
         json.dump(updated_data, jfile, indent=4)
     with open(scrapedcsv, 'a', newline='',
               encoding=encoding
-        # errors="ignore"
+              # errors="ignore"
               ) as sfile:
         csv.DictWriter(sfile, fieldnames=fieldnames, extrasaction='ignore').writerow(updated_data)
 
