@@ -7,12 +7,13 @@ import time
 import traceback
 from time import sleep
 
-import chromedriver_autoinstall
-import chromedriver_binary_sync
+import chromedriver_autoinstaller
+# import chromedriver_binary_sync
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
@@ -62,7 +63,7 @@ yes = ['Bergen', 'Burlington', 'Camden', 'Camden City', 'Essex', 'Hudson', 'Midd
 # Gloucester Co   NO:     Paulsboro, Westville and Woodbury
 # -
 # you must add the property new tag    18-YES-COs
-no_cities= {
+no_cities = {
     "Atlantic": ["Atlantic City", "Mays Landing"],
     "Mercer": ["Trenton"],
     "Gloucester": ["Paulsboro", "Westville", "Woodbury"]
@@ -1374,8 +1375,8 @@ def getChromeDriver(proxy=None):
         options.add_argument("--incognito")
     # chromedriver_autoinstaller.install()
     # chromedriver_autoinstall.install()
-    chromedriver_binary_sync.download()
-    return webdriver.Chrome(options=options)
+    # chromedriver_binary_sync.download()
+    return webdriver.Chrome(options=options,service=Service(chromedriver_autoinstaller.install()))
 
 
 def getFirefoxDriver():
