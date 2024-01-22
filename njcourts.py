@@ -577,7 +577,10 @@ def getNjParcels(county, district, block, lot, qual=None):
     except:
         url += "/CONDO"
         print(url)
-        soup = BeautifulSoup(requests.get(url).content, 'lxml')
+        try:
+            soup = BeautifulSoup(requests.get(url).content, 'lxml')
+        except:
+            return None
     data = {"County": county, "District": district, "URL": url}
     try:
         data["cadastre"] = soup.find("p", {"class": "cadastre"}).text
