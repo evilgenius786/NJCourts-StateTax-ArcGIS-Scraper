@@ -85,6 +85,8 @@ def getTag(row):
             tags.append('NJC 18-YES-COs')
     elif row['Venue'] in no:
         tags.append('NJC 11-NO-COs')
+    if row['Sift1PropCity'] != row['Sift1MailingCity'] and row['Sift1MailingCity'] != "":
+        tags.append('Absentee_Owners_BOT')
     tags.append(f'zz1-NJ-{row["Venue"]} Co')
     # zz0-NJ-Closed
     # zz0-NJ-Dismissed
@@ -95,6 +97,9 @@ def getTag(row):
     elif row['Case Type'] == 'Commercial Mortgage Foreclosure':
         tags.append('NJC🧿-PreForeclosure🧿👢')
         tags.append('NJC Commercial M-Forec')
+    elif row['Case Type'] =="Residential Mortgage Foreclosure":
+        tags.append('NJC🧿-PreForeclosure🧿👢')
+        tags.append('z-Reverse Mortgage (njc)')
     else:
         tags.append('NJC🧿-PreForeclosure🧿👢')
     date = datetime.datetime.strptime(row['Case Initiation Date'], '%Y-%m-%d')
@@ -581,7 +586,8 @@ def getNjParcels(county, district, block, lot, qual=None):
         traceback.print_exc()
         return None
     for field in ['fn', 'street-address', 'locality', 'postcode']:
-        data[field] = soup.find('span', {'class': field}).text
+        data[field] = soup.find('span', {'class': field}).text if soup.find('span', {'class': field}) else ""
+
     for tr in soup.find('table').find_all('tr'):
         if tr.find('th') is None:
             continue
