@@ -85,7 +85,7 @@ def getTag(row):
             tags.append('NJC 18-YES-COs')
     elif row['Venue'] in no:
         tags.append('NJC 11-NO-COs')
-    if row['Sift1PropCity'] != row['Sift1MailingCity'] and row['Sift1MailingCity'] != "":
+    if "Sift1PropCity" in row and row['Sift1PropCity'] != row['Sift1MailingCity'] and row['Sift1MailingCity'] != "":
         tags.append('Absentee_Owners_BOT')
     tags.append(f'zz1-NJ-{row["Venue"]} Co')
     # zz0-NJ-Closed
