@@ -34,9 +34,10 @@ filter_dir = "All NJ-COURT Filtered Forc"
 other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
-debug = os.path.isfile("debug")
-# debug = False
+# debug = os.path.isfile("debug")
+debug = False
 test = False
+# test = os.path.isfile("test")
 headless = False
 images = True
 maximize = False
@@ -73,19 +74,20 @@ no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Mercer', 'Salem']
 
 def getTag(row):
     tags = []
-    if "Camden City" in row['CourtPropertyAddress']:
+    if "CourtPropertyAddress" in row and "Camden City" in row['CourtPropertyAddress']:
         tags.append('NJC 11-NO-COs')
     elif row['Venue'] in yes:
         tags.append('NJC 18-YES-COs')
     # elif row['Sift1PropCity']
-    elif row['Venue'] in no_cities:
+    elif row['Venue'] in no_cities and 'Sift1PropCity' in row:
         if row['Sift1PropCity'] in no_cities[row['Venue']]:
             tags.append('NJC 11-NO-COs')
         else:
             tags.append('NJC 18-YES-COs')
     elif row['Venue'] in no:
         tags.append('NJC 11-NO-COs')
-    if "Sift1PropCity" in row and row['Sift1PropCity'] != row['Sift1MailingCity'] and row['Sift1MailingCity'] != "":
+    if "Sift1PropCity" in row and 'Sift1MailingCity' in row and row['Sift1PropCity'] != row['Sift1MailingCity'] and row[
+        'Sift1MailingCity'] != "":
         tags.append('Absentee_Owners_BOT')
     tags.append(f'zz1-NJ-{row["Venue"]} Co')
     # zz0-NJ-Closed
@@ -97,12 +99,15 @@ def getTag(row):
     elif row['Case Type'] == 'Commercial Mortgage Foreclosure':
         tags.append('NJC🧿-PreForeclosure🧿👢')
         tags.append('NJC Commercial M-Forec')
-    elif row['Case Type'] =="Residential Mortgage Foreclosure":
+    elif row['Case Type'] == "Residential Mortgage Foreclosure":
         tags.append('NJC🧿-PreForeclosure🧿👢')
         tags.append('z-Reverse Mortgage (njc)')
     else:
         tags.append('NJC🧿-PreForeclosure🧿👢')
-    date = datetime.datetime.strptime(row['Case Initiation Date'], '%Y-%m-%d')
+    if "/" in row['Case Initiation Date']:
+        date = datetime.datetime.strptime(row['Case Initiation Date'], '%m/%d/%Y')
+    else:
+        date = datetime.datetime.strptime(row['Case Initiation Date'], '%Y-%m-%d')
     tags.append(f'LP Bot NJCF {date.strftime("%Y-%m")} 🟦🤖')
     tags.append(f'zz_NJC_{date.strftime("%Y-%m-%d")}')
     new_row = {
@@ -171,8 +176,9 @@ def processJson(f):
             data.update(property_)
             updated_data = flatten_json(data)
             try:
-                updated_data.update(
-                    breakNormalizeAddress(updated_data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
+                if "CourtNormalizedPropertyAddress" in updated_data:
+                    updated_data.update(
+                        breakNormalizeAddress(updated_data["CourtNormalizedPropertyAddress"], "Sift1", "Prop"))
                 if "Case Initiation Date" in data and data["Case Initiation Date"] != "":
                     updated_data["Case Initiation Date"] = datetime.datetime.strptime(data["Case Initiation Date"],
                                                                                       "%m/%d/%Y").strftime("%Y-%m-%d")
@@ -199,9 +205,10 @@ def processJson(f):
                     try:
                         updated_data['NjParcelsMailingAddressStreet'] = details['street-address']
                         city_state = details['locality'].split()
-                        updated_data['NjParcelsMailingAddressCity'] = getCity(" ".join(city_state[:-1]))
-                        updated_data['NjParcelsMailingAddressState'] = city_state[-1]
-                        updated_data['NjParcelsMailingAddressZip'] = details['postcode']
+                        if len(city_state) != 0:
+                            updated_data['NjParcelsMailingAddressCity'] = getCity(" ".join(city_state[:-1]))
+                            updated_data['NjParcelsMailingAddressState'] = city_state[-1]
+                            updated_data['NjParcelsMailingAddressZip'] = details['postcode']
                     except:
                         print(data['NjParcels'])
                         traceback.print_exc()
@@ -311,11 +318,9 @@ def processJson(f):
                         updated_data['StateTaxMailingAddressCity'] = getCity(data['StateTax']['City State'].split(",")[
                                                                                  0].strip())
                         updated_data['StateTaxMailingAddressState'] = \
-                            data['StateTax']['City State'].split(",")[1].split()[
-                                0].strip()
+                            data['StateTax']['City State'].split(",")[1].split()[0].strip()
                         updated_data['StateTaxMailingAddressZip'] = \
-                            data['StateTax']['City State'].split(",")[1].split()[
-                                1].strip()
+                            data['StateTax']['City State'].split(",")[1].split()[1].strip()
                     except:
                         print(data['StateTax'])
                         traceback.print_exc()
@@ -579,6 +584,9 @@ def getNjParcels(county, district, block, lot, qual=None):
         print(url)
         try:
             soup = BeautifulSoup(requests.get(url).content, 'lxml')
+            if "The page you requested does not exist." in soup.text:
+                print(f"Invalid parcel {county}/{district}/{block}/{lot}")
+                return None
         except:
             return None
     data = {"County": county, "District": district, "URL": url}
@@ -586,7 +594,7 @@ def getNjParcels(county, district, block, lot, qual=None):
         data["cadastre"] = soup.find("p", {"class": "cadastre"}).text
     except:
         print(f"Invalid parcel {county}/{district}/{block}/{lot} {url}")
-        traceback.print_exc()
+        # traceback.print_exc()
         return None
     for field in ['fn', 'street-address', 'locality', 'postcode']:
         data[field] = soup.find('span', {'class': field}).text if soup.find('span', {'class': field}) else ""
@@ -643,6 +651,8 @@ def getOcean(district, block, lot, qual=None):
             ahrefs = table.find_all("a", {"target": "_blank"})
             print(f"Found {len(ahrefs)} records")
             href = ahrefs[0]["href"]
+            href = f"https://tax.co.ocean.nj.us/{href}"
+        if href.startswith("frmTaxBoardTaxListDetail"):
             href = f"https://tax.co.ocean.nj.us/{href}"
         print(f"Working on url ({block}/{lot}) {href}")
         content = requests.get(href).content
@@ -758,33 +768,35 @@ def getData(soup, driver, n, y):
                 tab_data[val.text.strip().replace(":", "")] = label.text.strip()
             if tab == "Properties":
                 block, lots, qual = getBlockLotQual(tab_data["Label"].replace(":", ""))
+
                 if qual == "":
                     qual = None
                 county = tab_data["County"]
                 district = tab_data["Municipality"].split("-")[1].strip()
-                for lot in lots:
-                    if str(lot).endswith(".0"):
-                        lot = int(lot)
-                    if county in tax_data_url.keys():
-                        tab_data["TaxDataHub"] = getTaxDataHub(county, district, block, lot, qual)
-                    elif county == "Ocean":
-                        tab_data["StateTax"] = getOcean(district, block, lot, qual)
-                    else:
-                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
-                    if county in ['Middlesex', 'Essex']:
-                        tab_data["StateTax"] = getNJactb(county, district, block, lot,
-                                                         tab_data["Municipality"].split("-")[0].strip(), qual)
-                    tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
-                    tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
-                    # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
-                    tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
-                                                                                  district)
+                if lots:
+                    for lot in lots:
+                        if str(lot).endswith(".0"):
+                            lot = int(lot)
+                        if county in tax_data_url.keys():
+                            tab_data["TaxDataHub"] = getTaxDataHub(county, district, block, lot, qual)
+                        elif county == "Ocean":
+                            tab_data["StateTax"] = getOcean(district, block, lot, qual)
+                        else:
+                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
+                        if county in ['Middlesex', 'Essex']:
+                            tab_data["StateTax"] = getNJactb(county, district, block, lot,
+                                                             tab_data["Municipality"].split("-")[0].strip(), qual)
+                        tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
+                        tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
+                        # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
+                        tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
+                                                                                      district)
 
-                    tab_data[
-                        'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
+                        tab_data[
+                            'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
-                    tab_data["Label"] = tab_data["Label"].replace(":", "")
+                        tab_data["Label"] = tab_data["Label"].replace(":", "")
                 tabs_data[tab].append(tab_data)
     # if tabs_data["Properties"]:
     #     property0 = tabs_data["Properties"][0]
@@ -792,17 +804,18 @@ def getData(soup, driver, n, y):
     data["Tabs"] = tabs_data
     data['CaseActions'] = []
     table = soup.find('table', {"id": "caseActionTbId2"})
-    ths = [th.text for th in table.find_all('th')]
-    for tr in table.find_all('tr'):
-        tds = [td.text for td in tr.find_all("td")]
-        case = {}
-        for i in range(len(ths)):
-            try:
-                case[ths[i].strip().replace(":", "")] = tds[i].strip()
-            except:
-                pass
-        if case != {}:
-            data['CaseActions'].append(case)
+    if table:
+        ths = [th.text for th in table.find_all('th')]
+        for tr in table.find_all('tr'):
+            tds = [td.text for td in tr.find_all("td")]
+            case = {}
+            for i in range(len(ths)):
+                try:
+                    case[ths[i].strip().replace(":", "")] = tds[i].strip()
+                except:
+                    pass
+            if case != {}:
+                data['CaseActions'].append(case)
     # pprint(json.dumps(data, indent=4))
     jf = f"./{jdir}/{y}-{n}.json"
     if isValid(data):
@@ -999,15 +1012,89 @@ def breakNormalizeAddress(addr, source, type_):
     except:
         traceback.print_exc()
         return {}
+def processTextFile():
+    print("Connecting to Chrome...")
+    driver = getChromeDriver()
+    input(
+        "Please goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces\nthen goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/civilCaseSearch.faces and press enter when done:")
+
+    with open("input.txt") as ifile:
+        for line in ifile:
+            y,n = line.strip().split(",")
+            print(f"Processing {y}-{n}")
+            if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
+                print(f"Skipping {y}-{n}")
+                continue
+            # if f"{y}-{n}" in notrequired:
+            #     pprint(f"Number {n} Year {y} not required!")
+            #     continue
+            try:
+                time.sleep(1)
+                checkMax(driver)
+                sptries = 1
+                while "Search By Docket Number" not in driver.page_source:
+                    pprint("Waiting for search page...")
+                    sptries += 1
+                    while "Enter user ID and password" in driver.page_source:
+                        driver.delete_all_cookies()
+                        driver.get(disclaimer)
+                        time.sleep(1)
+                        pprint("Reloading...")
+                        checkDisclaimer(driver)
+                    if sptries % 10 == 0:
+                        driver.get(nj_url)
+                        sptries = 1
+                    sleep(1)
+                fillInfo(driver, n, y)
+                if "Case not found" in driver.page_source:
+                    pprint("Case not found")
+                else:
+                    tries = 0
+                    req = True
+                    while "Case Caption" not in driver.page_source:
+                        pprint("Waiting for result page...")
+                        try:
+                            driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                        except:
+                            traceback.print_exc()
+                        tries += 1
+                        if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
+                            try:
+                                driver.refresh()
+                                req = fillInfo(driver, n, y)
+                            except:
+                                pass
+                            tries = 1
+                        elif "You have been logged off as your user session expired" in driver.page_source:
+                            pprint("You have been logged off as your user session expired.")
+                            click(driver, '//a[text()=" here"]')
+                        sleep(1)
+                    if req:
+                        getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+                        # CategorizeJson()
+                    lastrun['CurrentYear'] = y
+                    lastrun['CurrentNumber'] = n
+                    with open("LastRun.json", "w") as outfile:
+                        json.dump(lastrun, outfile, indent=4)
+            except:
+                traceback.print_exc()
+                pprint(f"Error {y} {n}")
+                with open("error.txt", "a") as f:
+                    f.write(f"{y},{n}\n")
+            driver.get(nj_url)
 
 
 def main():
+    if test:
+        driver = getChromeDriver()
+        getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "4362", "23")
+        return
     initialize()
     if test:
         processAllJson()
         exit()
     if not os.path.isfile("LastRun.json"):
-        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot: ")
+        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot\n3 to process from text file (input.txt): ")
     else:
         option = "1"
     if option == "1":
@@ -1015,6 +1102,8 @@ def main():
         # uploadCSV(sheet_headers, scrapedcsv)
     elif option == "2":
         SearchBlockLot()
+    elif option == "3":
+        processTextFile()
     else:
         print("Invalid option")
 
@@ -1084,7 +1173,7 @@ def getName(name: str, source: str):
     if "Blk" in name or "Block" in name or "Lot" in name:
         return data
     try:
-        if len(name.strip().split()) == 1:
+        if len(name.strip().split()) == 1 or not name.strip():
             return data
         name = name.replace("+", "&")
         if '.' in name:
@@ -1156,7 +1245,7 @@ def getName(name: str, source: str):
             data[f"{source}FirstName"] = name.split()[0]
             data[f"{source}LastName"] = name.split()[1][:-1]
             data[f"{source}MiddleName"] = name.split(",")[1]
-        elif name.split()[0][-1] == ",":
+        elif name.strip().split()[0][-1] == ",":
             data[f'{source}FirstName'] = name.split()[0][:-1]
             data[f'{source}LastName'] = name.split(",")[1].split()[0]
             if len(name.split(",")[1].split()) > 2:
@@ -1339,7 +1428,7 @@ def SearchBlockLot():
             data = {}
             for row in reader:
                 processBlockLot(data, row)
-                processBlockLot(data, row)
+                # processBlockLot(data, row)
     else:
         print("No block-lot.csv file found")
 
@@ -1385,7 +1474,7 @@ def getChromeDriver(proxy=None):
     # chromedriver_autoinstaller.install()
     # chromedriver_autoinstall.install()
     # chromedriver_binary_sync.download()
-    return webdriver.Chrome(options=options,service=Service(chromedriver_autoinstaller.install()))
+    return webdriver.Chrome(options=options, service=Service(chromedriver_autoinstaller.install()))
 
 
 def getFirefoxDriver():
@@ -2753,7 +2842,8 @@ def getRangeFromString(string):
 
 def getBlockLotQual(label):
     print(f"Getting block lot qual for {label}")
-    label = label
+    if "QUAL" in label and " QUAL" not in label:
+        label = label.replace("QUAL", " QUAL")
     block = label.split()[1]
     lot = label.split("Lot")[1].strip().replace("and", ",").replace("&", ",").replace(" ,", ',').replace(',,', ',')
     qual = ""
@@ -2786,7 +2876,7 @@ if __name__ == "__main__":
     # processAllJson()
     main()
     # driver = getChromeDriver()
-    # getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "4362", "23")
+    # getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "142", "23")
     # getGoogleAddress("283 Landing Rd, Downe , Cumberland")
     # checkNJATCB()
     # getNJactb("Sussex","Stanhope","11701","14")
