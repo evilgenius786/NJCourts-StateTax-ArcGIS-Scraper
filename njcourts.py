@@ -35,7 +35,7 @@ other_dir = "Did NOT FILTER"
 changeddir = "changed"
 scrapedcsv = "NJ-Courts.csv"
 # debug = os.path.isfile("debug")
-debug = False
+debug = True
 test = False
 # test = os.path.isfile("test")
 headless = False
@@ -790,7 +790,8 @@ def getData(soup, driver, n, y):
                         tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
                         tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
                         # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
-                        tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"], county,
+                        tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"],
+                                                                                      county,
                                                                                       district)
 
                         tab_data[
@@ -907,66 +908,70 @@ def processNjCourts(dockets=None):
     input(
         "Please goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/publicAccessDisclaimer.faces\nthen goto https://portal.njcourts.gov/webcivilcj/CIVILCaseJacketWeb/pages/civilCaseSearch.faces and press enter when done:")
     for n, y in num_years:
-        if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
-            print(f"Skipping {y}-{n}")
-            continue
-        # if f"{y}-{n}" in notrequired:
-        #     pprint(f"Number {n} Year {y} not required!")
-        #     continue
-        try:
-            time.sleep(1)
-            checkMax(driver)
-            sptries = 1
-            while "Search By Docket Number" not in driver.page_source:
-                pprint("Waiting for search page...")
-                sptries += 1
-                while "Enter user ID and password" in driver.page_source:
-                    driver.delete_all_cookies()
-                    driver.get(disclaimer)
-                    time.sleep(1)
-                    pprint("Reloading...")
-                    checkDisclaimer(driver)
-                if sptries % 10 == 0:
-                    driver.get(nj_url)
-                    sptries = 1
-                sleep(1)
-            fillInfo(driver, n, y)
-            if "Case not found" in driver.page_source:
-                pprint("Case not found")
-            else:
-                tries = 0
-                req = True
-                while "Case Caption" not in driver.page_source:
-                    pprint("Waiting for result page...")
+        pricessYearNumber(y, n, driver)
+
+
+def pricessYearNumber(y, n, driver):
+    if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
+        print(f"Skipping {y}-{n}")
+        return
+    # if f"{y}-{n}" in notrequired:
+    #     pprint(f"Number {n} Year {y} not required!")
+    #     continue
+    try:
+        time.sleep(1)
+        checkMax(driver)
+        sptries = 1
+        while "Search By Docket Number" not in driver.page_source:
+            pprint("Waiting for search page...")
+            sptries += 1
+            while "Enter user ID and password" in driver.page_source:
+                driver.delete_all_cookies()
+                driver.get(disclaimer)
+                time.sleep(1)
+                pprint("Reloading...")
+                checkDisclaimer(driver)
+            if sptries % 10 == 0:
+                driver.get(nj_url)
+                sptries = 1
+            sleep(1)
+        fillInfo(driver, n, y)
+        if "Case not found" in driver.page_source:
+            pprint("Case not found")
+        else:
+            tries = 0
+            req = True
+            while "Case Caption" not in driver.page_source:
+                pprint("Waiting for result page...")
+                try:
+                    driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                except:
+                    traceback.print_exc()
+                tries += 1
+                if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
                     try:
-                        driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
+                        driver.refresh()
+                        req = fillInfo(driver, n, y)
                     except:
-                        traceback.print_exc()
-                    tries += 1
-                    if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
-                        try:
-                            driver.refresh()
-                            req = fillInfo(driver, n, y)
-                        except:
-                            pass
-                        tries = 1
-                    elif "You have been logged off as your user session expired" in driver.page_source:
-                        pprint("You have been logged off as your user session expired.")
-                        click(driver, '//a[text()=" here"]')
-                    sleep(1)
-                if req:
-                    getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
-                    # CategorizeJson()
-                lastrun['CurrentYear'] = y
-                lastrun['CurrentNumber'] = n
-                with open("LastRun.json", "w") as outfile:
-                    json.dump(lastrun, outfile, indent=4)
-        except:
-            traceback.print_exc()
-            pprint(f"Error {y} {n}")
-            with open("error.txt", "a") as f:
-                f.write(f"{y},{n}\n")
-        driver.get(nj_url)
+                        pass
+                    tries = 1
+                elif "You have been logged off as your user session expired" in driver.page_source:
+                    pprint("You have been logged off as your user session expired.")
+                    click(driver, '//a[text()=" here"]')
+                sleep(1)
+            if req:
+                getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
+                # CategorizeJson()
+            lastrun['CurrentYear'] = y
+            lastrun['CurrentNumber'] = n
+            with open("LastRun.json", "w") as outfile:
+                json.dump(lastrun, outfile, indent=4)
+    except:
+        traceback.print_exc()
+        pprint(f"Error {y} {n}")
+        with open("error.txt", "a") as f:
+            f.write(f"{y},{n}\n")
+    driver.get(nj_url)
 
 
 def getGoogleAddress(street, county="", district=""):
@@ -1012,6 +1017,8 @@ def breakNormalizeAddress(addr, source, type_):
     except:
         traceback.print_exc()
         return {}
+
+
 def processTextFile():
     print("Connecting to Chrome...")
     driver = getChromeDriver()
@@ -1020,68 +1027,12 @@ def processTextFile():
 
     with open("input.txt") as ifile:
         for line in ifile:
-            y,n = line.strip().split(",")
-            print(f"Processing {y}-{n}")
-            if y == lastrun['CurrentYear'] and n < lastrun['CurrentNumber'] and not debug:
-                print(f"Skipping {y}-{n}")
-                continue
-            # if f"{y}-{n}" in notrequired:
-            #     pprint(f"Number {n} Year {y} not required!")
-            #     continue
+            y, n = line.strip().split(",")
             try:
-                time.sleep(1)
-                checkMax(driver)
-                sptries = 1
-                while "Search By Docket Number" not in driver.page_source:
-                    pprint("Waiting for search page...")
-                    sptries += 1
-                    while "Enter user ID and password" in driver.page_source:
-                        driver.delete_all_cookies()
-                        driver.get(disclaimer)
-                        time.sleep(1)
-                        pprint("Reloading...")
-                        checkDisclaimer(driver)
-                    if sptries % 10 == 0:
-                        driver.get(nj_url)
-                        sptries = 1
-                    sleep(1)
-                fillInfo(driver, n, y)
-                if "Case not found" in driver.page_source:
-                    pprint("Case not found")
-                else:
-                    tries = 0
-                    req = True
-                    while "Case Caption" not in driver.page_source:
-                        pprint("Waiting for result page...")
-                        try:
-                            driver.find_element(By.XPATH, '//*[@id="searchByDocForm:searchBtnDummy"]').click()
-                        except:
-                            traceback.print_exc()
-                        tries += 1
-                        if "captcha-solver-info" in driver.page_source or tries % 5 == 0:
-                            try:
-                                driver.refresh()
-                                req = fillInfo(driver, n, y)
-                            except:
-                                pass
-                            tries = 1
-                        elif "You have been logged off as your user session expired" in driver.page_source:
-                            pprint("You have been logged off as your user session expired.")
-                            click(driver, '//a[text()=" here"]')
-                        sleep(1)
-                    if req:
-                        getData(BeautifulSoup(driver.page_source, 'lxml'), driver, n, y)
-                        # CategorizeJson()
-                    lastrun['CurrentYear'] = y
-                    lastrun['CurrentNumber'] = n
-                    with open("LastRun.json", "w") as outfile:
-                        json.dump(lastrun, outfile, indent=4)
+                pricessYearNumber(y, n, driver)
             except:
-                traceback.print_exc()
-                pprint(f"Error {y} {n}")
-                with open("error.txt", "a") as f:
-                    f.write(f"{y},{n}\n")
-            driver.get(nj_url)
+                pass
+            input("Press enter to continue")
 
 
 def main():
@@ -1094,7 +1045,8 @@ def main():
         processAllJson()
         exit()
     if not os.path.isfile("LastRun.json"):
-        option = input("1 to get cases from NJ Courts\n2 to search state/district/block/lot\n3 to process from text file (input.txt): ")
+        option = input(
+            "1 to get cases from NJ Courts\n2 to search state/district/block/lot\n3 to process from text file (input.txt): ")
     else:
         option = "1"
     if option == "1":
@@ -2874,8 +2826,8 @@ if __name__ == "__main__":
     # print(getBlockLotQual("Block 163.22        Lot 6, C2942"))
     # exit()
     # processAllJson()
+
     main()
-    # driver = getChromeDriver()
     # getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "142", "23")
     # getGoogleAddress("283 Landing Rd, Downe , Cumberland")
     # checkNJATCB()
