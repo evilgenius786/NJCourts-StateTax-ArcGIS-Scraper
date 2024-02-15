@@ -12,6 +12,7 @@ import chromedriver_autoinstaller
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
+from pathvalidate import sanitize_filepath
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -20,7 +21,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 t = 1
 timeout = 10
-
+if os.path.isfile("LastRun.json"):
+    os.remove("LastRun.json")
 lastrun = {"StartYear": 22, "EndYear": 22, "StartNumber": 1, "EndNumber": 100, "CurrentYear": 22, "CurrentNumber": 1}
 if os.path.isfile("LastRun.json"):
     with open("LastRun.json", 'r') as infile:
@@ -75,17 +77,17 @@ no = ['Atlantic', 'Cape May', 'Cumberland', 'Gloucester', 'Mercer', 'Salem']
 def getTag(row):
     tags = []
     if "CourtPropertyAddress" in row and "Camden City" in row['CourtPropertyAddress']:
-        tags.append('NJC 11-NO-COs')
+        tags.append('NJC 03-NO-COs')
     elif row['Venue'] in yes:
         tags.append('NJC 18-YES-COs')
     # elif row['Sift1PropCity']
     elif row['Venue'] in no_cities and 'Sift1PropCity' in row:
         if row['Sift1PropCity'] in no_cities[row['Venue']]:
-            tags.append('NJC 11-NO-COs')
+            tags.append('NJC 03-NO-COs')
         else:
             tags.append('NJC 18-YES-COs')
     elif row['Venue'] in no:
-        tags.append('NJC 11-NO-COs')
+        tags.append('NJC 03-NO-COs')
     if "Sift1PropCity" in row and 'Sift1MailingCity' in row and row['Sift1PropCity'] != row['Sift1MailingCity'] and row[
         'Sift1MailingCity'] != "":
         tags.append('Absentee_Owners_BOT')
@@ -113,7 +115,7 @@ def getTag(row):
     new_row = {
         "Venue": row['Venue'],
         "Case Type": row['Case Type'],
-        "CourtPropertyAddress": row['CourtPropertyAddress'],
+        "CourtPropertyAddress": row['CourtPropertyAddress'] if "CourtPropertyAddress" in row else "",
         "Case Initiation Date": row['Case Initiation Date'],
         "Case Status": row['Case Status'],
         "Tags": ', '.join(tags)
@@ -382,8 +384,6 @@ def processJson(f):
                 traceback.print_exc()
                 # input("Press any key...")
             newfile = f"./CSV_json/CSV-{f.replace('/', '_').replace('.json', '')}-{data['Label'].replace('/', '_')}.json"
-            if test:
-                print(updated_data.keys())
 
             append(updated_data, newfile)
     else:
@@ -415,7 +415,11 @@ def getTaxDataHub(county, district, block, lot, qual=None):
     print(url)
     data = {"County": county, "District": district, "URL": url}
     soup = BeautifulSoup(requests.get(url).text, "html.parser")
-    script = soup.find_all('script')[-3].text
+    scripts = soup.find_all('script')
+    if len(scripts) < 3:
+        print(f"No data found for {county}/{district}/{block}/{lot}")
+        return
+    script = scripts[-3].text
     for line in script.splitlines()[2:-5]:
         if "DetailField" in line:
             continue
@@ -768,11 +772,17 @@ def getData(soup, driver, n, y):
                 tab_data[val.text.strip().replace(":", "")] = label.text.strip()
             if tab == "Properties":
                 block, lots, qual = getBlockLotQual(tab_data["Label"].replace(":", ""))
+                tab_data[
+                    'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
+                tab_data["Label"] = tab_data["Label"].replace(":", "")
                 if qual == "":
                     qual = None
                 county = tab_data["County"]
                 district = tab_data["Municipality"].split("-")[1].strip()
+                tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"],
+                                                                              county,
+                                                                              district)
                 if lots:
                     for lot in lots:
                         if str(lot).endswith(".0"):
@@ -790,14 +800,9 @@ def getData(soup, driver, n, y):
                         tab_data['ArcGis'] = getArcGis(county, district, block, lot, qual)
                         tab_data['NjParcels'] = getNjParcels(county, district, block, lot, qual)
                         # tab_data['NjPropertyRecords'] = getNjPropertyRecords(driver, county, district, block, lot, qual)
-                        tab_data['CourtNormalizedPropertyAddress'] = getGoogleAddress(tab_data["Street Address"],
-                                                                                      county,
-                                                                                      district)
 
-                        tab_data[
-                            'CourtPropertyAddress'] = f"{tab_data['Street Address']},{tab_data['Municipality'].split('-')[1]}, {tab_data['County']}"
 
-                        tab_data["Label"] = tab_data["Label"].replace(":", "")
+
                 tabs_data[tab].append(tab_data)
     # if tabs_data["Properties"]:
     #     property0 = tabs_data["Properties"][0]
@@ -855,8 +860,6 @@ def getData(soup, driver, n, y):
         # pprint(f"Not required {data['Docket Number']}")
         # with open(jf.replace(jdir, "notreq") + ".json", 'w') as jfile:
         #     json.dump(data, jfile, indent=4)
-    if test:
-        return data
     downloaded = False
     for i in range(10):
         time.sleep(1)
@@ -886,14 +889,14 @@ def processNjCourts(dockets=None):
         lastrun['CurrentNumber'] = lastrun['StartNumber']
         with open("LastRun.json", "w") as outfile:
             json.dump(lastrun, outfile, indent=4)
-        nums = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
-        years = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
+        nums = range(int(lastrun['StartNumber']), int(lastrun['EndNumber']) + 1)
+        years = range(int(lastrun['CurrentYear']), int(lastrun['EndYear']) + 1)
         num_years = [(num, year) for year in years for num in nums]
     else:
         print("Resuming from last run")
         print(json.dumps(lastrun, indent=4))
-        nums = range(lastrun['StartNumber'], lastrun['EndNumber'] + 1)
-        years = range(lastrun['CurrentYear'], lastrun['EndYear'] + 1)
+        nums = range(int(lastrun['StartNumber']), int(lastrun['EndNumber']) + 1)
+        years = range(int(lastrun['CurrentYear']), int(lastrun['EndYear']) + 1)
         num_years = [(num, year) for year in years for num in nums]
     print("Connecting to Chrome...")
     driver = getChromeDriver()
@@ -938,6 +941,7 @@ def pricessYearNumber(y, n, driver):
         fillInfo(driver, n, y)
         if "Case not found" in driver.page_source:
             pprint("Case not found")
+            return
         else:
             tries = 0
             req = True
@@ -978,9 +982,6 @@ def getGoogleAddress(street, county="", district=""):
     addr = f"{street} {county} {district}".title()
     for word in ['Twnshp', 'City', 'Boro', 'Twp', 'Borough', 'Township']:
         addr = addr.replace(word, '')
-    if test:
-        print('Returning default address')
-        return addr
     url = f"https://www.google.com/search?q={addr}"
     print(f"Getting Google Address {url}")
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " \
@@ -1032,23 +1033,16 @@ def processTextFile():
                 pricessYearNumber(y, n, driver)
             except:
                 pass
-            input("Press enter to continue")
+            # input("Press enter to continue")
 
 
 def main():
-    if test:
-        driver = getChromeDriver()
-        getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "4362", "23")
-        return
     initialize()
-    if test:
-        processAllJson()
-        exit()
-    if not os.path.isfile("LastRun.json"):
-        option = input(
-            "1 to get cases from NJ Courts\n2 to search state/district/block/lot\n3 to process from text file (input.txt): ")
-    else:
-        option = "1"
+    # if not os.path.isfile("LastRun.json"):
+    option = input(
+        "1 to get cases from NJ Courts\n2 to search state/district/block/lot\n3 to process from text file (input.txt): ")
+    # else:
+    #     option = "1"
     if option == "1":
         processNjCourts()
         # uploadCSV(sheet_headers, scrapedcsv)
@@ -1241,9 +1235,19 @@ def downloadPdf(driver):
             tr.find_element(By.XPATH, './/td[@class="caseActCol2"]/a').click()
             time.sleep(1)
             form = driver.find_element(By.XPATH, '//form[@id="documentDetails"]')
-            form.find_element(By.XPATH, './/input[@type="checkbox"]').click()
+            for i in range(5):
+                try:
+                    form.find_element(By.XPATH, './/input[@type="checkbox"]').click()
+                    break
+                except:
+                    time.sleep(1)
             time.sleep(3)
-            driver.find_element(By.XPATH, '//input[@id="documentDetails:savePrintButton"]').click()
+            for i in range(5):
+                try:
+                    driver.find_element(By.XPATH, '//input[@id="documentDetails:savePrintButton"]').click()
+                    break
+                except:
+                    time.sleep(1)
             time.sleep(1)
 
 
@@ -1474,7 +1478,7 @@ def flatten_json(y):
 def append(updated_data, newfile):
     updated_data['Tags'] = getTag(updated_data)
     updated_data['Comments'] = json.dumps(updated_data.copy(), indent=4)
-    with open(newfile, 'w') as jfile:
+    with open(sanitize_filepath(newfile), 'w') as jfile:
         json.dump(updated_data, jfile, indent=4)
     with open(scrapedcsv, 'a', newline='',
               encoding=encoding
@@ -2828,6 +2832,12 @@ if __name__ == "__main__":
     # processAllJson()
 
     main()
+    # driver = getChromeDriver()
+    # with open("njcourts.html", "w") as f:
+    #     f.write(driver.page_source)
+    # driver.find_element(By.XPATH, '//*[@id="searchByDocForm:idCivilDocketNum"]').send_keys("12")
+    # driver.find_element(By.XPATH, '//*[@id="searchByDocForm:idCivilDocketYear"]').send_keys("12")
+
     # getData(BeautifulSoup(driver.page_source, 'html.parser'), driver, "142", "23")
     # getGoogleAddress("283 Landing Rd, Downe , Cumberland")
     # checkNJATCB()
